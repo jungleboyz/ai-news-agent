@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}AI News Agent - Home{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <header class="space-y-2">
+        <h1 class="text-3xl font-bold text-slate-50">
+            {% if show_pagination %}All Digests{% else %}Recent Digests{% endif %}
+        </h1>
+        <p class="text-slate-400">
+            {% if show_pagination %}
+                Showing {{ digests|length }} of {{ total }} digests
+            {% else %}
+                Your daily AI news and podcast summaries
+            {% endif %}
+        </p>
+    </header>
+
+    <!-- Digest List -->
+    {% if digests %}
+    <div class="grid gap-4">
+        {% for digest in digests %}
+        <a href="/digest/{{ digest.date }}"
+           class="block rounded-lg border border-slate-800 bg-slate-900/70 p-6 hover:bg-slate-900 hover:border-slate-700 transition-all group">
+            <div class="flex items-center justify-between">
+                <div class="space-y-2">
+                    <div class="flex items-center gap-3">
+                        <h2 class="text-xl font-semibold text-slate-50 group-hover:text-emerald-400 transition-colors">
+                            {{ digest.date }}
+                        </h2>
+                        <span class="px-2 py-0.5 text-xs rounded bg-slate-800 text-slate-400">
+                            {{ digest.items|length }} items
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-4 text-sm text-slate-400">
+                        <span>{{ digest.news_sources_count }} news sources</span>
+                        <span>&middot;</span>
+                        <span>{{ digest.podcast_sources_count }} podcast sources</span>
+                        <span>&middot;</span>
+                        <span>{{ digest.total_items_considered }} items considered</span>
+                    </div>
+                </div>
+                <div class="text-slate-600 group-hover:text-emerald-400 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                    </svg>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-16 text-slate-500">
+        <p class="text-lg">No digests found.</p>
+        <p class="text-sm mt-2">Run the agent to generate your first digest.</p>
+    </div>
+    {% endif %}
+
+    <!-- Pagination -->
+    {% if show_pagination and total_pages > 1 %}
+    {% include "partials/pagination.html" %}
+    {% endif %}
+
+    <!-- View All Link -->
+    {% if not show_pagination and digests|length > 0 %}
+    <div class="text-center">
+        <a href="/digests" class="inline-flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors">
+            View all digests
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

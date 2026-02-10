@@ -1,0 +1,18 @@
+# Podcast RSS feeds (one URL per line)
+# Updated 2026-02-09 with verified working feeds
+
+# Working feeds
+https://lexfridman.com/feed/podcast/
+https://changelog.com/practicalai/feed
+https://exponent.fm/feed
+https://feeds.megaphone.fm/DVVTS2890392624
+https://theinnermostloop.substack.com/feed
+https://feeds.megaphone.fm/GLT1412515089
+https://rss2.flightcast.com/xmsftuzjjykcmqwolaqn6mdn
+
+# Fixed feeds (replaced broken URLs)
+https://feeds.soundcloud.com/users/soundcloud:users:264034133/sounds.rss
+https://twimlai.libsyn.com/rss
+https://dataskeptic.libsyn.com/rss
+https://feeds.simplecast.com/JGE3yC0V
+https://feeds.simplecast.com/rZ0cYk12

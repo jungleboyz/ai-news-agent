@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Search - AI News Agent{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <header class="space-y-2">
+        <h1 class="text-3xl font-bold text-slate-50">Search</h1>
+        <p class="text-slate-400">Find news articles and podcast episodes</p>
+    </header>
+
+    <!-- Search Form -->
+    <form hx-get="/search/results"
+          hx-target="#search-results"
+          hx-trigger="submit"
+          hx-indicator="#loading"
+          class="space-y-6 p-6 rounded-lg border border-slate-800 bg-slate-900/70">
+
+        <!-- Search Query -->
+        <div>
+            <label for="q" class="block text-sm font-medium text-slate-300 mb-2">Search</label>
+            <input type="text"
+                   name="q"
+                   id="q"
+                   value="{{ q or '' }}"
+                   placeholder="Search titles and summaries..."
+                   class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+        </div>
+
+        <!-- Filters Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <!-- Date From -->
+            <div>
+                <label for="date_from" class="block text-sm font-medium text-slate-300 mb-2">From Date</label>
+                <input type="date"
+                       name="date_from"
+                       id="date_from"
+                       value="{{ date_from or '' }}"
+                       class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+            </div>
+
+            <!-- Date To -->
+            <div>
+                <label for="date_to" class="block text-sm font-medium text-slate-300 mb-2">To Date</label>
+                <input type="date"
+                       name="date_to"
+                       id="date_to"
+                       value="{{ date_to or '' }}"
+                       class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+            </div>
+
+            <!-- Type Filter -->
+            <div>
+                <label for="type" class="block text-sm font-medium text-slate-300 mb-2">Type</label>
+                <select name="type"
+                        id="type"
+                        class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                    <option value="">All Types</option>
+                    <option value="news" {% if type == 'news' %}selected{% endif %}>News</option>
+                    <option value="podcast" {% if type == 'podcast' %}selected{% endif %}>Podcasts</option>
+                </select>
+            </div>
+
+            <!-- Score Type Filter -->
+            <div>
+                <label for="score_type" class="block text-sm font-medium text-slate-300 mb-2">Match Type</label>
+                <select name="score_type"
+                        id="score_type"
+                        class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                    <option value="">All</option>
+                    <option value="match" {% if score_type == 'match' %}selected{% endif %}>Keyword Match</option>
+                    <option value="fallback" {% if score_type == 'fallback' %}selected{% endif %}>Fallback</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Source Filter -->
+        <div>
+            <label for="source" class="block text-sm font-medium text-slate-300 mb-2">Source</label>
+            <select name="source"
+                    id="source"
+                    class="w-full px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                <option value="">All Sources</option>
+                {% for src in sources %}
+                <option value="{{ src }}" {% if source == src %}selected{% endif %}>{{ src }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Submit Button -->
+        <div class="flex items-center gap-4">
+            <button type="submit"
+                    class="px-6 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-900">
+                Search
+            </button>
+            <a href="/search" class="text-sm text-slate-400 hover:text-slate-300 transition-colors">
+                Clear filters
+            </a>
+            <div id="loading" class="htmx-indicator">
+                <svg class="animate-spin h-5 w-5 text-emerald-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        </div>
+    </form>
+
+    <!-- Search Results -->
+    <div id="search-results">
+        {% if searched %}
+        {% include "partials/item_list.html" %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

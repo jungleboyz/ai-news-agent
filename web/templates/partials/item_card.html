@@ -1,0 +1,75 @@
+<article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors">
+    <!-- Position badge -->
+    <div class="absolute top-3 right-3 flex items-center gap-2">
+        {% if item.score > 0 %}
+        <span class="px-2 py-1 text-xs font-bold uppercase tracking-wide rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            Match
+        </span>
+        {% else %}
+        <span class="px-2 py-1 text-xs font-bold uppercase tracking-wide rounded-md bg-slate-700/50 text-slate-400 border border-slate-600/30">
+            Fallback
+        </span>
+        {% endif %}
+    </div>
+
+    <div class="flex items-start gap-3 mb-3">
+        <span class="text-sm font-mono text-slate-500">{{ item.position }}.</span>
+        <div class="flex-1">
+            <!-- Type indicator -->
+            <div class="flex items-center gap-2 mb-1">
+                {% if item.type == 'news' %}
+                <span class="text-lg">&#x1F4F0;</span>
+                <span class="text-xs text-slate-400 uppercase">News</span>
+                {% else %}
+                <span class="text-lg">&#x1F399;&#xFE0F;</span>
+                <span class="text-xs text-slate-400 uppercase">Podcast</span>
+                {% endif %}
+            </div>
+
+            <!-- Title -->
+            <h2 class="text-xl font-semibold text-slate-50 leading-tight pr-24">{{ item.title }}</h2>
+
+            <!-- Score badge -->
+            <div class="mt-2 flex items-center gap-2 text-sm">
+                <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">[{{ item.score }}]</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metadata -->
+    <ul class="mt-4 space-y-2 text-sm text-slate-200">
+        {% if item.type == 'news' %}
+        <li>
+            <span class="font-semibold text-slate-100">Link:</span>
+            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">
+                {{ item.link }}
+            </a>
+        </li>
+        <li>
+            <span class="font-semibold text-slate-100">Source:</span>
+            <span class="text-slate-300">{{ item.source }}</span>
+        </li>
+        {% else %}
+        <li>
+            <span class="font-semibold text-slate-100">Show:</span>
+            <span class="text-slate-300">{{ item.show_name }}</span>
+        </li>
+        <li>
+            <span class="font-semibold text-slate-100">Link:</span>
+            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">
+                {{ item.link }}
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+
+    <!-- Summary -->
+    {% if item.summary %}
+    <div class="mt-4 pt-4 border-t border-slate-800">
+        <p class="font-semibold text-slate-100 mb-2">
+            {% if item.type == 'news' %}Why this matters:{% else %}Summary:{% endif %}
+        </p>
+        <div class="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">{{ item.summary }}</div>
+    </div>
+    {% endif %}
+</article>

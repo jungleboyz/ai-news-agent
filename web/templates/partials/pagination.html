@@ -1,0 +1,64 @@
+<nav class="flex items-center justify-center gap-2">
+    <!-- Previous button -->
+    {% if page > 1 %}
+    <a href="?page={{ page - 1 }}{% if per_page %}&per_page={{ per_page }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if type %}&type={{ type }}{% endif %}{% if source %}&source={{ source }}{% endif %}{% if score_type %}&score_type={{ score_type }}{% endif %}"
+       class="px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors">
+        Previous
+    </a>
+    {% else %}
+    <span class="px-3 py-2 rounded-lg border border-slate-800 text-slate-600 cursor-not-allowed">
+        Previous
+    </span>
+    {% endif %}
+
+    <!-- Page numbers -->
+    <div class="flex items-center gap-1">
+        {% set start_page = [1, page - 2]|max %}
+        {% set end_page = [total_pages, page + 2]|min %}
+
+        {% if start_page > 1 %}
+        <a href="?page=1{% if per_page %}&per_page={{ per_page }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if type %}&type={{ type }}{% endif %}{% if source %}&source={{ source }}{% endif %}{% if score_type %}&score_type={{ score_type }}{% endif %}"
+           class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors">
+            1
+        </a>
+        {% if start_page > 2 %}
+        <span class="px-2 text-slate-600">...</span>
+        {% endif %}
+        {% endif %}
+
+        {% for p in range(start_page, end_page + 1) %}
+        {% if p == page %}
+        <span class="w-10 h-10 flex items-center justify-center rounded-lg bg-emerald-600 text-white font-medium">
+            {{ p }}
+        </span>
+        {% else %}
+        <a href="?page={{ p }}{% if per_page %}&per_page={{ per_page }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if type %}&type={{ type }}{% endif %}{% if source %}&source={{ source }}{% endif %}{% if score_type %}&score_type={{ score_type }}{% endif %}"
+           class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors">
+            {{ p }}
+        </a>
+        {% endif %}
+        {% endfor %}
+
+        {% if end_page < total_pages %}
+        {% if end_page < total_pages - 1 %}
+        <span class="px-2 text-slate-600">...</span>
+        {% endif %}
+        <a href="?page={{ total_pages }}{% if per_page %}&per_page={{ per_page }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if type %}&type={{ type }}{% endif %}{% if source %}&source={{ source }}{% endif %}{% if score_type %}&score_type={{ score_type }}{% endif %}"
+           class="w-10 h-10 flex items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors">
+            {{ total_pages }}
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Next button -->
+    {% if page < total_pages %}
+    <a href="?page={{ page + 1 }}{% if per_page %}&per_page={{ per_page }}{% endif %}{% if q %}&q={{ q }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}{% if type %}&type={{ type }}{% endif %}{% if source %}&source={{ source }}{% endif %}{% if score_type %}&score_type={{ score_type }}{% endif %}"
+       class="px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors">
+        Next
+    </a>
+    {% else %}
+    <span class="px-3 py-2 rounded-lg border border-slate-800 text-slate-600 cursor-not-allowed">
+        Next
+    </span>
+    {% endif %}
+</nav>

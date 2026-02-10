@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}Digest {{ digest.date }} - AI News Agent{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <header class="space-y-4">
+        <div class="flex items-center gap-4">
+            {% if prev_digest %}
+            <a href="/digest/{{ prev_digest.date }}"
+               class="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-emerald-400 hover:border-slate-700 transition-colors"
+               title="Previous: {{ prev_digest.date }}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+            </a>
+            {% endif %}
+
+            <div class="flex-1">
+                <p class="text-sm uppercase tracking-wide text-slate-400">Digest</p>
+                <h1 class="text-3xl font-bold text-slate-50">{{ digest.date }}</h1>
+            </div>
+
+            {% if next_digest %}
+            <a href="/digest/{{ next_digest.date }}"
+               class="p-2 rounded-lg border border-slate-800 text-slate-400 hover:text-emerald-400 hover:border-slate-700 transition-colors"
+               title="Next: {{ next_digest.date }}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="flex items-center gap-4 text-sm text-slate-400">
+            <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                {{ digest.news_sources_count }} news sources
+            </span>
+            <span>&middot;</span>
+            <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                {{ digest.podcast_sources_count }} podcast sources
+            </span>
+            <span>&middot;</span>
+            <span>{{ digest.total_items_considered }} items considered</span>
+            <span>&middot;</span>
+            <span class="font-semibold text-slate-300">{{ items|length }} items in digest</span>
+        </div>
+    </header>
+
+    <!-- Items -->
+    <section class="space-y-6">
+        {% for item in items %}
+        {% include "partials/item_card.html" %}
+        {% endfor %}
+    </section>
+
+    <!-- Empty state -->
+    {% if not items %}
+    <div class="text-center py-16 text-slate-500">
+        <p class="text-lg">No items in this digest.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+/* Custom styles for AI News Agent */
+
+/* HTMX loading indicator */
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline-block;
+}
+
+/* Date input styling for dark mode */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    cursor: pointer;
+}
+
+/* Line clamp for summary previews */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Smooth transitions for interactive elements */
+a, button {
+    transition: all 0.15s ease-in-out;
+}
+
+/* Focus styles for accessibility */
+a:focus, button:focus, input:focus, select:focus {
+    outline: none;
+    ring: 2px;
+    ring-offset: 2px;
+    ring-color: rgb(16 185 129); /* emerald-500 */
+}
+
+/* Scrollbar styling for dark mode */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgb(15 23 42); /* slate-900 */
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgb(51 65 85); /* slate-700 */
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgb(71 85 105); /* slate-600 */
+}
