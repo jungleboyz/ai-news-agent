@@ -156,7 +156,7 @@ Focus on actionable insights, surprising facts, or unique perspectives shared in
     if anthropic_client:
         try:
             response = anthropic_client.messages.create(
-                model="claude-3-5-haiku-latest",
+                model="claude-3-haiku-20240307",
                 max_tokens=1024,
                 messages=[
                     {"role": "user", "content": prompt}
