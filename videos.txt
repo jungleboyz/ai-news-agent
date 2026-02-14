@@ -1,40 +1,15 @@
-# YouTube AI/GenAI Channels (one URL per line)
-# Updated 2026-02-11
-# Format: YouTube channel URLs (will be converted to RSS feeds automatically)
+# YouTube AI/GenAI Video Feeds
+# Updated 2026-02-14
+# Format: Direct YouTube RSS feed URLs (channel_id format)
 
 # AI Research & News
-https://www.youtube.com/@TwoMinutePapers
-https://www.youtube.com/@YannicKilcher
-https://www.youtube.com/@AIExplained-official
-https://www.youtube.com/@byloadsoffun
-https://www.youtube.com/@TheAIGRID
-
-# AI Tutorials & Education
-https://www.youtube.com/@AndrejKarpathy
-https://www.youtube.com/@3blue1brown
-https://www.youtube.com/@StatQuestWithJoshStarmer
-https://www.youtube.com/@SethBlake
-
-# AI Companies & Labs
-https://www.youtube.com/@OpenAI
-https://www.youtube.com/@Google
-https://www.youtube.com/@NVIDIADeveloper
-
-# AI Podcasts & Shows on YouTube
-https://www.youtube.com/@lexfridman
-https://www.youtube.com/@MachineLearningStreetTalk
-https://www.youtube.com/@eye_on_ai
-
-# AI for Developers
-https://www.youtube.com/@maborak
-https://www.youtube.com/@AICodeKing
-https://www.youtube.com/@DaveEbbelaar
-
-#Video RSS Feeds
+https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg
+https://www.youtube.com/feeds/videos.xml?channel_id=UCZHmQk67mSJgfCCTn7xBfew
+https://www.youtube.com/feeds/videos.xml?channel_id=UCNJ1Ymd5yFuUPtn21xtRbbw
+https://www.youtube.com/feeds/videos.xml?channel_id=UCbY9xX3_jW5c2fjlZVBI4cg
 https://www.youtube.com/feeds/videos.xml?channel_id=UCpV_X0VrL8-jg3t6wYGS-1g
 https://www.youtube.com/feeds/videos.xml?channel_id=UCBPRJjIWfyNG4X-CRbnv78A
 https://www.youtube.com/feeds/videos.xml?channel_id=UCobqgqE4i5Kf7wrxRxhToQA
-https://www.youtube.com/feeds/videos.xml?channel_id=UCNJ1Ymd5yFuUPtn21xtRbbw
 https://www.youtube.com/feeds/videos.xml?channel_id=UCrXSVX9a1mj8l0CMLwKgMVw
 https://www.youtube.com/feeds/videos.xml?channel_id=UCEAbqW0HFB_UxZoUDO0kJBw
 https://www.youtube.com/feeds/videos.xml?channel_id=UCj8shE7aIn4Yawwbo2FceCQ
@@ -67,7 +42,6 @@ https://www.youtube.com/feeds/videos.xml?channel_id=UCDia_lkNYKLJVLRLQl_-pFw
 https://www.youtube.com/feeds/videos.xml?channel_id=UCXx0JWOKERPZdzczPfY-huA
 https://www.youtube.com/feeds/videos.xml?channel_id=UChpleBmo18P08aKCIgti38g
 https://www.youtube.com/feeds/videos.xml?channel_id=UCG6qpjVnBTTT8wLGBygANOQ
-https://www.assemblyai.com/blog/rss/
 https://www.youtube.com/feeds/videos.xml?channel_id=UCHXa4OpASJEwrHrLeIzw7Yg
 https://www.youtube.com/feeds/videos.xml?channel_id=UCHuiy8bXnmK5nisYHUd1J5g
 https://www.youtube.com/feeds/videos.xml?channel_id=UCCKx8mAHiFus-XYQLy_WnaA
@@ -84,12 +58,30 @@ https://www.youtube.com/feeds/videos.xml?channel_id=UCHhYXsLBEVVnbvsq57n1MTQ
 https://www.youtube.com/feeds/videos.xml?channel_id=UCa0RTSXWyZdh7IciV9r-3ow
 https://www.youtube.com/feeds/videos.xml?channel_id=UCJQJAI7IjbLcpsjWdSzYz0Q
 https://www.youtube.com/feeds/videos.xml?channel_id=UCuHZ1UYfHRqk3-5N5oc97Kw
-https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg
 https://www.youtube.com/feeds/videos.xml?channel_id=UCqp4QHWfVYd65onoyraiYvg
 https://www.youtube.com/feeds/videos.xml?channel_id=UCoW_WzQNJVAjxo4osNAxd_g
 https://www.youtube.com/feeds/videos.xml?channel_id=UCBp3w4DCEC64FZr4k9ROxig
 https://www.youtube.com/feeds/videos.xml?channel_id=UCUzGQrN-lyyc0BWTYoJM_Sg
 https://www.youtube.com/feeds/videos.xml?channel_id=UCJekgf6k62CQHdENWf2NgAQ
 https://www.youtube.com/feeds/videos.xml?channel_id=UC2WmuBuFq6gL08QYG-JjXKw
-https://www.youtube.com/feeds/videos.xml?channel_id=UCZHmQk67mSJgfCCTn7xBfew
 
+# AI Tutorials & Education (resolved from @handles)
+https://www.youtube.com/feeds/videos.xml?channel_id=UCXUPKJO5MZQN11PqgIvyuvQ
+https://www.youtube.com/feeds/videos.xml?channel_id=UCYO_jab_esuFRV4b17AJtAw
+https://www.youtube.com/feeds/videos.xml?channel_id=UCQ-lzRODy6GrdCcdZLJ0LPw
+
+# AI Companies & Labs (resolved from @handles)
+https://www.youtube.com/feeds/videos.xml?channel_id=UCXZCJLdBC09xxGZ6gcdrc6A
+https://www.youtube.com/feeds/videos.xml?channel_id=UCK8sQmJBp8GCxrOtXWBpyEA
+https://www.youtube.com/feeds/videos.xml?channel_id=UCBHcMCGaiJhv-ESTcWGJPcw
+
+# AI Podcasts & Shows (resolved from @handles)
+https://www.youtube.com/feeds/videos.xml?channel_id=UCSHZKyawb77ixDdsGog4iWA
+
+# AI for Developers (resolved from @handles)
+https://www.youtube.com/feeds/videos.xml?channel_id=UCLn-zaIOQOrojtekZgjkOkg
+https://www.youtube.com/feeds/videos.xml?channel_id=UC0m81bQuthaQZmFbXEY9QSw
+https://www.youtube.com/feeds/videos.xml?channel_id=UCn8ujwUInbJkBhffxqAPBVQ
+
+# Other AI Blogs
+https://www.assemblyai.com/blog/rss/
