@@ -94,6 +94,20 @@ An intelligent, self-improving AI news platform that learns your preferences, di
 
 ---
 
+## Deployment
+
+| Requirement | Description |
+|-------------|-------------|
+| **Domain** | Live at **ripin.ai** |
+| **SSL** | HTTPS with auto-renewing certificates |
+| **CDN** | CloudFlare or similar for global performance |
+| **Hosting** | Cloud provider (AWS/GCP/Vercel/Railway) |
+| **CI/CD** | Auto-deploy on push to main branch |
+| **Monitoring** | Uptime monitoring, error tracking, analytics |
+| **Backups** | Automated database backups |
+
+---
+
 ## Technical Architecture
 
 ### Data Layer
