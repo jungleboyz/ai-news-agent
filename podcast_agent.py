@@ -155,13 +155,21 @@ def save_podcast_summaries(summaries: Dict[str, str]) -> None:
         json.dump(summaries, f, indent=2)
 
 
-def run_podcast_agent() -> List[dict]:
+def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
     """
     Main function to process podcast feeds and return scored episodes.
     Returns a list of picked episodes with transcripts and summaries.
+
+    Args:
+        skip_transcription: If True, skip audio transcription (use cached or description).
+                          If None, check SKIP_PODCAST_TRANSCRIPTION env var.
     """
     from transcriber import transcribe_episode
     from summarizer import summarize_podcast, generate_fallback_podcast_summary
+
+    # Check environment variable if not explicitly set
+    if skip_transcription is None:
+        skip_transcription = os.getenv("SKIP_PODCAST_TRANSCRIPTION", "").lower() in ("1", "true", "yes")
     
     ensure_out_dir()
     seen = load_podcast_seen()
@@ -227,6 +235,9 @@ def run_podcast_agent() -> List[dict]:
         # Get or generate transcript
         if audio_url in transcripts_cache:
             transcript = transcripts_cache[audio_url]
+        elif skip_transcription:
+            # Use description as fallback when transcription is skipped
+            transcript = ep.get("description", "")
         else:
             transcript = transcribe_episode(audio_url, minutes=TRANSCRIBE_MINUTES)
             if transcript:

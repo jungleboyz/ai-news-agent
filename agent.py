@@ -59,18 +59,22 @@ def fetch_rss_items(feed_url: str, limit: int = 10) -> List[dict]:
     Fetch RSS items from a single feed URL.
     Returns a list of dicts with title + link.
     """
-    feed = feedparser.parse(feed_url)
+    try:
+        feed = feedparser.parse(feed_url)
 
-    items = []
-    for entry in feed.entries[:limit]:
-        title = getattr(entry, "title", "").strip()
-        link = getattr(entry, "link", "").strip()
-        if title and link:
-            summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
-            summary = re.sub(r"\s+", " ", summary).strip()
-            items.append({"title": title, "link": link, "summary": summary})
+        items = []
+        for entry in feed.entries[:limit]:
+            title = getattr(entry, "title", "").strip()
+            link = getattr(entry, "link", "").strip()
+            if title and link:
+                summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
+                summary = re.sub(r"\s+", " ", summary).strip()
+                items.append({"title": title, "link": link, "summary": summary})
 
-    return items
+        return items
+    except Exception as e:
+        print(f"  ⚠ Error fetching {feed_url}: {e}")
+        return []
 
 
 def make_id(title: str, link: str) -> str:
@@ -128,6 +132,19 @@ def run_agent() -> str:
         print(f"⚠ Warning: Podcast agent failed: {e}")
         print("   (News processing will continue independently)")
         podcast_episodes = []
+
+    # Run video agent (will return empty list if no videos configured)
+    try:
+        from video_agent import run_video_agent
+        video_episodes = run_video_agent(max_videos=5, days_back=7)
+        if video_episodes:
+            print(f"✓ Found {len(video_episodes)} AI-relevant videos")
+        else:
+            print("⚠ No new AI-relevant videos found")
+    except Exception as e:
+        print(f"⚠ Warning: Video agent failed: {e}")
+        print("   (News processing will continue independently)")
+        video_episodes = []
 
     all_items = []
     for src in sources:
@@ -219,6 +236,18 @@ def run_agent() -> str:
             "summary": ep.get("summary", ""),
             "show_name": ep.get("show_name", "Unknown")
         })
+
+    # Add video episodes
+    for vid in video_episodes:
+        all_digest_items.append({
+            "type": "video",
+            "title": vid["title"],
+            "link": vid["link"],
+            "score": vid["score"],
+            "source": vid.get("channel", "Unknown"),
+            "summary": vid.get("summary", ""),
+            "show_name": vid.get("channel", "Unknown")
+        })
     
     # Sort all items by score (descending)
     all_digest_items.sort(key=lambda x: x["score"], reverse=True)
@@ -239,15 +268,23 @@ def run_agent() -> str:
         # Unified list of all items (news + podcasts)
         for i, item in enumerate(all_digest_items, 1):
             tag = "MATCH" if item["score"] > 0 else "FALLBACK"
-            item_type = "📰" if item["type"] == "news" else "🎙️"
+            if item["type"] == "news":
+                item_type = "📰"
+            elif item["type"] == "podcast":
+                item_type = "🎙️"
+            else:
+                item_type = "📺"
 
             f.write(f"### {i}. {item_type} [{item['score']}] ({tag}) {item['title']}\n\n")
-            
+
             if item["type"] == "news":
                 f.write(f"- Link: {item['link']}\n")
                 f.write(f"- Source: {item['source']}\n\n")
-            else:
+            elif item["type"] == "podcast":
                 f.write(f"- Show: {item['show_name']}\n")
+                f.write(f"- Link: {item['link']}\n\n")
+            else:
+                f.write(f"- Channel: {item['show_name']}\n")
                 f.write(f"- Link: {item['link']}\n\n")
 
             # Show summary if it exists
@@ -285,8 +322,15 @@ def run_agent() -> str:
         for i, item in enumerate(all_digest_items, 1):
             tag = "MATCH" if item["score"] > 0 else "FALLBACK"
             tag_class = "text-emerald-400" if item["score"] > 0 else "text-slate-400"
-            item_type_icon = "📰" if item["type"] == "news" else "🎙️"
-            item_type_label = "News" if item["type"] == "news" else "Podcast"
+            if item["type"] == "news":
+                item_type_icon = "📰"
+                item_type_label = "News"
+            elif item["type"] == "podcast":
+                item_type_icon = "🎙️"
+                item_type_label = "Podcast"
+            else:
+                item_type_icon = "📺"
+                item_type_label = "Video"
             
             f.write('      <article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors">\n')
             f.write('        <div class="absolute top-3 right-3">\n')
@@ -311,8 +355,11 @@ def run_agent() -> str:
             if item["type"] == "news":
                 f.write(f'          <li><span class="font-semibold text-slate-100">Link:</span> <a href="{item["link"]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">{item["link"]}</a></li>\n')
                 f.write(f'          <li><span class="font-semibold text-slate-100">Source:</span> <span class="text-slate-300">{item["source"]}</span></li>\n')
-            else:
+            elif item["type"] == "podcast":
                 f.write(f'          <li><span class="font-semibold text-slate-100">Show:</span> <span class="text-slate-300">{item["show_name"]}</span></li>\n')
+                f.write(f'          <li><span class="font-semibold text-slate-100">Link:</span> <a href="{item["link"]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">{item["link"]}</a></li>\n')
+            else:
+                f.write(f'          <li><span class="font-semibold text-slate-100">Channel:</span> <span class="text-slate-300">{item["show_name"]}</span></li>\n')
                 f.write(f'          <li><span class="font-semibold text-slate-100">Link:</span> <a href="{item["link"]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">{item["link"]}</a></li>\n')
             f.write("        </ul>\n")
 
