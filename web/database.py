@@ -30,7 +30,7 @@ def get_db():
 def init_db():
     """Create all tables."""
     from sqlalchemy import text
-    from web.models import Digest, Item  # noqa: F401
+    from web.models import Digest, Item, TopicCluster  # noqa: F401
 
     # Ensure data directory exists
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)

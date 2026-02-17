@@ -15,6 +15,11 @@ import feedparser
 import requests
 from dotenv import load_dotenv
 
+# Semantic scoring imports
+from services.embeddings import EmbeddingService
+from services.vector_store import VectorStore
+from services.semantic_scorer import SemanticScorer
+
 # Try to import youtube-transcript-api
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
@@ -40,7 +45,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # Seen videos file
 SEEN_FILE = Path("out/seen_videos.json")
 
-# AI/GenAI keywords for scoring
+# AI/GenAI keywords for fallback scoring
 AI_KEYWORDS = [
     "ai", "artificial intelligence", "machine learning", "deep learning",
     "neural network", "gpt", "chatgpt", "claude", "llm", "large language model",
@@ -51,6 +56,45 @@ AI_KEYWORDS = [
     "computer vision", "nlp", "natural language", "speech recognition",
     "text-to-speech", "text-to-image", "multimodal", "foundation model"
 ]
+
+# Semantic scoring config
+USE_SEMANTIC_SCORING = True
+CHROMADB_DIR = "chromadb_data"
+
+# Service singletons
+_semantic_scorer: Optional[SemanticScorer] = None
+_vector_store: Optional[VectorStore] = None
+_embedding_service: Optional[EmbeddingService] = None
+
+# Quota exceeded flag - prevents repeated API calls after 429 error
+_quota_exceeded: bool = False
+
+
+def get_embedding_service() -> EmbeddingService:
+    """Get or create the embedding service singleton."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+
+def get_vector_store() -> VectorStore:
+    """Get or create the vector store singleton."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore(
+            persist_dir=CHROMADB_DIR,
+            embedding_service=get_embedding_service()
+        )
+    return _vector_store
+
+
+def get_semantic_scorer() -> SemanticScorer:
+    """Get or create the semantic scorer singleton."""
+    global _semantic_scorer
+    if _semantic_scorer is None:
+        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
+    return _semantic_scorer
 
 
 def load_seen_videos() -> set:
@@ -154,8 +198,8 @@ def fetch_youtube_transcript(video_id: str) -> Optional[str]:
         return None
 
 
-def score_video(title: str, description: str = "", transcript: str = "") -> int:
-    """Score a video based on AI/GenAI keyword matches."""
+def score_video_keywords(title: str, description: str = "", transcript: str = "") -> int:
+    """Legacy keyword-based scoring for videos."""
     text = f"{title} {description} {transcript}".lower()
     score = 0
 
@@ -168,6 +212,106 @@ def score_video(title: str, description: str = "", transcript: str = "") -> int:
                 score += 1
 
     return score
+
+
+def score_video(title: str, description: str = "", transcript: str = "") -> int:
+    """Score a video using semantic or keyword scoring."""
+    global _quota_exceeded
+
+    if not USE_SEMANTIC_SCORING or _quota_exceeded:
+        return score_video_keywords(title, description, transcript)
+
+    try:
+        scorer = get_semantic_scorer()
+        text = f"{title} {description} {transcript}".strip()
+        semantic_score = scorer.score_text(text)
+        return scorer.score_to_int(semantic_score, scale=10)
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            if not _quota_exceeded:
+                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
+                _quota_exceeded = True
+        else:
+            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
+        return score_video_keywords(title, description, transcript)
+
+
+def score_video_semantic(video: Dict[str, Any], transcript: str = "") -> Dict[str, Any]:
+    """Score a video and store embedding information.
+
+    Args:
+        video: Video dict with title, description, video_id.
+        transcript: Optional transcript text.
+
+    Returns:
+        Video dict with score, semantic_score, and embedding added.
+    """
+    global _quota_exceeded
+
+    if not USE_SEMANTIC_SCORING or _quota_exceeded:
+        video["score"] = score_video_keywords(video["title"], video.get("description", ""), transcript)
+        video["semantic_score"] = None
+        video["embedding"] = None
+        return video
+
+    try:
+        embedding_service = get_embedding_service()
+        scorer = get_semantic_scorer()
+
+        text = f"{video['title']} {video.get('description', '')} {transcript}".strip()
+        embedding = embedding_service.get_embedding(text)
+        semantic_score = scorer.score_item(embedding)
+
+        video["score"] = scorer.score_to_int(semantic_score, scale=10)
+        video["semantic_score"] = semantic_score
+        video["embedding"] = embedding
+
+        return video
+
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            if not _quota_exceeded:
+                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
+                _quota_exceeded = True
+        else:
+            print(f"  ⚠ Semantic scoring failed for video: {e}")
+        video["score"] = score_video_keywords(video["title"], video.get("description", ""), transcript)
+        video["semantic_score"] = None
+        video["embedding"] = None
+        return video
+
+
+def store_video_embeddings(videos: List[Dict[str, Any]]) -> None:
+    """Store video embeddings in ChromaDB."""
+    if not USE_SEMANTIC_SCORING:
+        return
+
+    try:
+        vector_store = get_vector_store()
+
+        items_to_store = []
+        for video in videos:
+            if video.get("embedding"):
+                items_to_store.append({
+                    "id": video.get("hash") or video.get("video_id", ""),
+                    "text": f"{video['title']} {video.get('description', '')}".strip(),
+                    "metadata": {
+                        "title": video["title"],
+                        "link": video["link"],
+                        "channel": video.get("channel", ""),
+                        "semantic_score": video.get("semantic_score"),
+                    },
+                    "embedding": video["embedding"],
+                })
+
+        if items_to_store:
+            vector_store.add_items_batch(items_to_store, "video")
+            print(f"  📦 Stored {len(items_to_store)} video embeddings in ChromaDB")
+
+    except Exception as e:
+        print(f"  ⚠ Failed to store video embeddings: {e}")
 
 
 def parse_video_feeds(feed_urls: List[str], max_per_feed: int = 5, days_back: int = 7) -> List[Dict[str, Any]]:
@@ -241,6 +385,8 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
     processed = []
 
     print(f"📹 Processing {len(videos)} videos for AI content...")
+    if USE_SEMANTIC_SCORING:
+        print("🧠 Using semantic scoring for video relevance...")
 
     for video in videos:
         video_id = video.get('video_id')
@@ -260,21 +406,17 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
             print(f"  🔍 Fetching transcript: {video['title'][:50]}...")
             transcript = fetch_youtube_transcript(video_id)
 
-        # Re-score with transcript
-        final_score = score_video(
-            video['title'],
-            video.get('description', ''),
-            transcript or ''
-        )
-
+        # Re-score with transcript (using semantic scoring if enabled)
         video['transcript'] = transcript
-        video['score'] = final_score
         video['hash'] = hashlib.sha256(video['link'].encode()).hexdigest()[:24]
+        video['id'] = video['hash']  # For consistency with other agents
+
+        video = score_video_semantic(video, transcript or '')
 
         # Mark as seen
         seen.add(video_id)
 
-        if final_score > 0:
+        if video['score'] > 0:
             processed.append(video)
 
     # Save seen videos
@@ -282,7 +424,13 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
 
     # Sort by score and return top videos
     processed.sort(key=lambda x: x['score'], reverse=True)
-    return processed[:max_videos]
+    top_videos = processed[:max_videos]
+
+    # Store embeddings for top videos
+    if USE_SEMANTIC_SCORING and top_videos:
+        store_video_embeddings(top_videos)
+
+    return top_videos
 
 
 def summarize_videos(videos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

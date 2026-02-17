@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}{{ cluster.label }} - AI News Agent{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <!-- Back link -->
+    <a href="/topics" class="text-blue-400 hover:text-blue-300 mb-6 inline-block">
+        &larr; Back to Topics
+    </a>
+
+    <!-- Cluster header -->
+    <div class="bg-gray-800 rounded-xl p-6 mb-8 border border-gray-700">
+        <div class="flex items-start justify-between mb-4">
+            <h1 class="text-3xl font-bold text-white">{{ cluster.label }}</h1>
+            <span class="bg-blue-600 text-white px-4 py-2 rounded-full">
+                {{ cluster.item_count }} items
+            </span>
+        </div>
+
+        {% if cluster.summary %}
+        <p class="text-gray-300 text-lg mb-4">{{ cluster.summary }}</p>
+        {% endif %}
+
+        <div class="flex gap-4 text-sm text-gray-400">
+            <span>Avg Score: {{ "%.1f"|format(cluster.avg_score) }}</span>
+            {% if cluster.digest %}
+            <span>Date: {{ cluster.digest.date }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Items list -->
+    <div class="space-y-4">
+        {% for item in items %}
+        <div class="bg-gray-800 rounded-lg p-5 hover:bg-gray-750 transition-colors border border-gray-700">
+            <div class="flex items-start gap-4">
+                <!-- Type badge -->
+                <span class="{% if item.type == 'news' %}bg-green-600{% else %}bg-purple-600{% endif %} text-white text-xs px-2 py-1 rounded uppercase shrink-0">
+                    {{ item.type }}
+                </span>
+
+                <div class="flex-1 min-w-0">
+                    <!-- Title -->
+                    <a href="{{ item.link }}" target="_blank"
+                       class="text-lg font-medium text-white hover:text-blue-400 block mb-2">
+                        {{ item.title }}
+                    </a>
+
+                    <!-- Source and confidence -->
+                    <div class="flex items-center gap-4 text-sm text-gray-400 mb-2">
+                        <span>{{ item.source|truncate(50) }}</span>
+                        {% if item.cluster_confidence %}
+                        <span class="text-gray-500">
+                            Confidence: {{ "%.0f"|format(item.cluster_confidence * 100) }}%
+                        </span>
+                        {% endif %}
+                    </div>
+
+                    <!-- Summary -->
+                    {% if item.summary %}
+                    <p class="text-gray-400 text-sm line-clamp-2">{{ item.summary }}</p>
+                    {% endif %}
+                </div>
+
+                <!-- Score -->
+                <div class="text-right shrink-0">
+                    <span class="text-2xl font-bold {% if item.score >= 5 %}text-green-400{% elif item.score >= 3 %}text-yellow-400{% else %}text-gray-400{% endif %}">
+                        {{ item.score }}
+                    </span>
+                    <div class="text-xs text-gray-500">score</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

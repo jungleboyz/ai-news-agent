@@ -7,8 +7,12 @@ import time
 import hashlib
 from datetime import datetime, timezone
 
-# Import shared scoring from agent.py
-# We'll import this from agent module when integrating
+# Semantic scoring imports
+from services.embeddings import EmbeddingService
+from services.vector_store import VectorStore
+from services.semantic_scorer import SemanticScorer
+
+# Legacy keyword list for fallback scoring
 USER_INTERESTS = [
     "genai", "generative ai", "llm", "agent", "agents",
     "openai", "anthropic", "gemini", "mistral", "claude",
@@ -19,12 +23,51 @@ USER_INTERESTS = [
 # --- Config ---
 PODCASTS_FILE = "podcasts.txt"
 OUT_DIR = "out"
+CHROMADB_DIR = "chromadb_data"
 MAX_EPISODES_PER_FEED = 5
 TRANSCRIBE_MINUTES = 15
 DIGEST_TOP_PODCASTS = 5
 PODCAST_SEEN_PATH = os.path.join(OUT_DIR, "podcast_seen.json")
 PODCAST_TRANSCRIPTS_PATH = os.path.join(OUT_DIR, "podcast_transcripts.json")
 PODCAST_SUMMARIES_PATH = os.path.join(OUT_DIR, "podcast_summaries.json")
+
+# Enable/disable semantic scoring
+USE_SEMANTIC_SCORING = True
+
+# Service singletons
+_semantic_scorer: Optional[SemanticScorer] = None
+_vector_store: Optional[VectorStore] = None
+_embedding_service: Optional[EmbeddingService] = None
+
+# Quota exceeded flag - prevents repeated API calls after 429 error
+_quota_exceeded: bool = False
+
+
+def get_embedding_service() -> EmbeddingService:
+    """Get or create the embedding service singleton."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+
+def get_vector_store() -> VectorStore:
+    """Get or create the vector store singleton."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore(
+            persist_dir=CHROMADB_DIR,
+            embedding_service=get_embedding_service()
+        )
+    return _vector_store
+
+
+def get_semantic_scorer() -> SemanticScorer:
+    """Get or create the semantic scorer singleton."""
+    global _semantic_scorer
+    if _semantic_scorer is None:
+        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
+    return _semantic_scorer
 
 
 def ensure_out_dir() -> None:
@@ -49,14 +92,114 @@ def norm(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
 
-def score_item(title: str, description: str = "", transcript: str = "") -> int:
-    """Score podcast episode based on keyword matching."""
+def score_item_keywords(title: str, description: str = "", transcript: str = "") -> int:
+    """Legacy keyword-based scoring for podcast episodes."""
     text = norm(f"{title} {description} {transcript}")
     score = 0
     for kw in USER_INTERESTS:
         if kw in text:
             score += 2
     return score
+
+
+def score_item(title: str, description: str = "", transcript: str = "") -> int:
+    """Score podcast episode using semantic or keyword scoring."""
+    global _quota_exceeded
+
+    if not USE_SEMANTIC_SCORING or _quota_exceeded:
+        return score_item_keywords(title, description, transcript)
+
+    try:
+        scorer = get_semantic_scorer()
+        text = f"{title} {description} {transcript}".strip()
+        semantic_score = scorer.score_text(text)
+        return scorer.score_to_int(semantic_score, scale=10)
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            if not _quota_exceeded:
+                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
+                _quota_exceeded = True
+        else:
+            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
+        return score_item_keywords(title, description, transcript)
+
+
+def score_episode_semantic(ep: dict, transcript: str = "") -> dict:
+    """Score an episode and store embedding information.
+
+    Args:
+        ep: Episode dict with title, description, id.
+        transcript: Optional transcript text.
+
+    Returns:
+        Episode dict with score, semantic_score, and embedding added.
+    """
+    global _quota_exceeded
+
+    if not USE_SEMANTIC_SCORING or _quota_exceeded:
+        ep["score"] = score_item_keywords(ep["title"], ep.get("description", ""), transcript)
+        ep["semantic_score"] = None
+        ep["embedding"] = None
+        return ep
+
+    try:
+        embedding_service = get_embedding_service()
+        scorer = get_semantic_scorer()
+
+        text = f"{ep['title']} {ep.get('description', '')} {transcript}".strip()
+        embedding = embedding_service.get_embedding(text)
+        semantic_score = scorer.score_item(embedding)
+
+        ep["score"] = scorer.score_to_int(semantic_score, scale=10)
+        ep["semantic_score"] = semantic_score
+        ep["embedding"] = embedding
+
+        return ep
+
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            if not _quota_exceeded:
+                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
+                _quota_exceeded = True
+        else:
+            print(f"  ⚠ Semantic scoring failed for episode: {e}")
+        ep["score"] = score_item_keywords(ep["title"], ep.get("description", ""), transcript)
+        ep["semantic_score"] = None
+        ep["embedding"] = None
+        return ep
+
+
+def store_podcast_embeddings(episodes: List[dict]) -> None:
+    """Store podcast episode embeddings in ChromaDB."""
+    if not USE_SEMANTIC_SCORING:
+        return
+
+    try:
+        vector_store = get_vector_store()
+
+        items_to_store = []
+        for ep in episodes:
+            if ep.get("embedding"):
+                items_to_store.append({
+                    "id": ep["id"],
+                    "text": f"{ep['title']} {ep.get('description', '')}".strip(),
+                    "metadata": {
+                        "title": ep["title"],
+                        "link": ep["link"],
+                        "show_name": ep.get("show_name", ""),
+                        "semantic_score": ep.get("semantic_score"),
+                    },
+                    "embedding": ep["embedding"],
+                })
+
+        if items_to_store:
+            vector_store.add_items_batch(items_to_store, "podcast")
+            print(f"  📦 Stored {len(items_to_store)} podcast embeddings in ChromaDB")
+
+    except Exception as e:
+        print(f"  ⚠ Failed to store podcast embeddings: {e}")
 
 
 def fetch_podcast_episodes(feed_url: str, limit: int = MAX_EPISODES_PER_FEED) -> List[dict]:
@@ -209,9 +352,16 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
             print(f"📅 Including {len(recent_seen)} recently seen episodes (last 7 days)")
             fresh = recent_seen
     
-    # Score episodes (will update after transcription)
-    for ep in fresh:
+    # Initial score episodes (will update after transcription)
+    total = len(fresh)
+    if USE_SEMANTIC_SCORING and not _quota_exceeded:
+        print(f"🧠 Generating initial embeddings and semantic scores for {total} episodes...")
+    else:
+        print(f"📊 Scoring {total} episodes with keyword matching...")
+    for i, ep in enumerate(fresh):
         ep["score"] = score_item(ep["title"], ep.get("description", ""), "")
+        if (i + 1) % 50 == 0:
+            print(f"    Progress: {i + 1}/{total} episodes scored")
     
     # Sort by score desc
     fresh.sort(key=lambda x: x["score"], reverse=True)
@@ -248,9 +398,9 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
                 transcript = ep.get("description", "")
         
         ep["transcript"] = transcript
-        
-        # Re-score with transcript
-        ep["score"] = score_item(ep["title"], ep.get("description", ""), transcript)
+
+        # Re-score with transcript (using semantic scoring if enabled)
+        ep = score_episode_semantic(ep, transcript)
         
         # Get or generate summary with 5 key learnings
         if audio_url in summaries_cache:
@@ -278,5 +428,9 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
         save_podcast_transcripts(transcripts_cache)
     if summaries_updated:
         save_podcast_summaries(summaries_cache)
-    
+
+    # Store embeddings in ChromaDB
+    if USE_SEMANTIC_SCORING and picked:
+        store_podcast_embeddings(picked)
+
     return picked

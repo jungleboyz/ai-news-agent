@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from web.database import init_db
-from web.routes import digests, search, api
+from web.routes import digests, search, api, semantic_search, clusters
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -30,6 +30,8 @@ app.state.templates = templates
 app.include_router(digests.router)
 app.include_router(search.router)
 app.include_router(api.router)
+app.include_router(semantic_search.router)
+app.include_router(clusters.router)
 
 
 @app.on_event("startup")

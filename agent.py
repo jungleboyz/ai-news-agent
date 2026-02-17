@@ -1,12 +1,17 @@
 import os
 import re
-from typing import List
+from typing import List, Optional
 import feedparser
 import json
 import time
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict
+
+# Semantic scoring imports
+from services.embeddings import EmbeddingService
+from services.vector_store import VectorStore
+from services.semantic_scorer import SemanticScorer
 
 
 # --- Config ---
@@ -15,15 +20,53 @@ OUT_DIR = "out"
 DIGEST_TOP_N = 10
 SEEN_PATH = os.path.join(OUT_DIR, "seen.json")
 SUMMARIES_PATH = os.path.join(OUT_DIR, "summaries.json")
+CHROMADB_DIR = "chromadb_data"
 
+# Enable/disable semantic scoring (set to False to use keyword scoring)
+USE_SEMANTIC_SCORING = True
 
-# Keywords that represent what you care about (we'll use these to score articles)
+# Keywords for fallback scoring (used when semantic scoring is disabled or fails)
 USER_INTERESTS = [
     "genai", "generative ai", "llm", "agent", "agents",
     "openai", "anthropic", "gemini", "mistral", "claude",
     "cursor", "copilot", "aider", "enterprise", "bank",
     "marketing", "automation", "workflow", "funding", "acquisition"
 ]
+
+# Semantic scorer singleton
+_semantic_scorer: Optional[SemanticScorer] = None
+_vector_store: Optional[VectorStore] = None
+_embedding_service: Optional[EmbeddingService] = None
+
+# Quota exceeded flag - prevents repeated API calls after 429 error
+_quota_exceeded: bool = False
+
+
+def get_embedding_service() -> EmbeddingService:
+    """Get or create the embedding service singleton."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+
+def get_vector_store() -> VectorStore:
+    """Get or create the vector store singleton."""
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore(
+            persist_dir=CHROMADB_DIR,
+            embedding_service=get_embedding_service()
+        )
+    return _vector_store
+
+
+def get_semantic_scorer() -> SemanticScorer:
+    """Get or create the semantic scorer singleton."""
+    global _semantic_scorer
+    if _semantic_scorer is None:
+        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
+    return _semantic_scorer
 
 
 def ensure_out_dir() -> None:
@@ -45,13 +88,194 @@ def norm(text: str) -> str:
     """Lowercase + collapse whitespace so matching is consistent."""
     return re.sub(r"\s+", " ", (text or "").lower()).strip()
 
-def score_item(title: str, summary: str = "") -> int:
+
+def score_item_keywords(title: str, summary: str = "") -> int:
+    """Legacy keyword-based scoring."""
     text = norm(f"{title} {summary}")
     score = 0
     for kw in USER_INTERESTS:
         if kw in text:
             score += 2
     return score
+
+
+def score_item(title: str, summary: str = "") -> int:
+    """Score an item using semantic scoring or fallback to keywords."""
+    global _quota_exceeded
+
+    if not USE_SEMANTIC_SCORING or _quota_exceeded:
+        return score_item_keywords(title, summary)
+
+    try:
+        scorer = get_semantic_scorer()
+        text = f"{title} {summary}".strip()
+        semantic_score = scorer.score_text(text)
+        # Convert to integer scale (0-10) for compatibility
+        return scorer.score_to_int(semantic_score, scale=10)
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            if not _quota_exceeded:
+                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
+                _quota_exceeded = True
+        else:
+            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
+        return score_item_keywords(title, summary)
+
+
+def score_items_batch(items: List[dict]) -> List[dict]:
+    """Score multiple items using batch embedding for efficiency.
+
+    Args:
+        items: List of items with 'title', 'summary', and 'id' keys.
+
+    Returns:
+        Items with 'score', 'semantic_score', and 'embedding' added.
+    """
+    global _quota_exceeded
+    total = len(items)
+
+    if not USE_SEMANTIC_SCORING or not items or _quota_exceeded:
+        print(f"  📊 Scoring {total} items with keyword matching...")
+        for i, item in enumerate(items):
+            item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
+            item["semantic_score"] = None
+            item["embedding"] = None
+            if (i + 1) % 200 == 0:
+                print(f"    Progress: {i + 1}/{total} items scored")
+        print(f"  ✓ Keyword scoring complete")
+        return items
+
+    try:
+        print(f"  🧠 Generating embeddings for {total} items...")
+        print(f"    (This may take a moment - calling OpenAI API)")
+
+        embedding_service = get_embedding_service()
+        scorer = get_semantic_scorer()
+
+        # Prepare texts for batch embedding
+        texts = [f"{it['title']} {it.get('summary', '')}".strip() for it in items]
+
+        # Batch generate embeddings
+        embeddings = embedding_service.batch_embed(texts)
+
+        print(f"  ✓ Embeddings received, scoring items...")
+
+        # Score all items
+        scored_count = 0
+        fallback_count = 0
+        for item, embedding in zip(items, embeddings):
+            if embedding:
+                semantic_score = scorer.score_item(embedding)
+                item["score"] = scorer.score_to_int(semantic_score, scale=10)
+                item["semantic_score"] = semantic_score
+                item["embedding"] = embedding
+                scored_count += 1
+            else:
+                # Fallback for failed embeddings
+                item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
+                item["semantic_score"] = None
+                item["embedding"] = None
+                fallback_count += 1
+
+        print(f"  ✓ Semantic scoring complete: {scored_count} semantic, {fallback_count} keyword fallback")
+        return items
+
+    except Exception as e:
+        error_msg = str(e)
+        if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
+            print(f"  ⚠ OpenAI API quota/rate limit hit - falling back to keyword scoring")
+            _quota_exceeded = True
+        else:
+            print(f"  ⚠ Batch semantic scoring failed: {e}")
+
+        print(f"  📊 Scoring {total} items with keyword matching...")
+        for i, item in enumerate(items):
+            item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
+            item["semantic_score"] = None
+            item["embedding"] = None
+            if (i + 1) % 200 == 0:
+                print(f"    Progress: {i + 1}/{total} items scored")
+        print(f"  ✓ Keyword scoring complete")
+        return items
+
+
+def store_embeddings(items: List[dict], item_type: str = "news") -> None:
+    """Store item embeddings in ChromaDB.
+
+    Args:
+        items: List of items with 'id', 'title', 'link', 'embedding' keys.
+        item_type: Type of items ("news", "podcast", "video").
+    """
+    if not USE_SEMANTIC_SCORING:
+        return
+
+    try:
+        vector_store = get_vector_store()
+
+        items_to_store = []
+        for item in items:
+            if item.get("embedding"):
+                items_to_store.append({
+                    "id": item["id"],
+                    "text": f"{item['title']} {item.get('summary', '')}".strip(),
+                    "metadata": {
+                        "title": item["title"],
+                        "link": item["link"],
+                        "source": item.get("source", ""),
+                        "semantic_score": item.get("semantic_score"),
+                    },
+                    "embedding": item["embedding"],
+                })
+
+        if items_to_store:
+            vector_store.add_items_batch(items_to_store, item_type)
+            print(f"  📦 Stored {len(items_to_store)} embeddings in ChromaDB")
+
+    except Exception as e:
+        print(f"  ⚠ Failed to store embeddings: {e}")
+
+
+def check_duplicates(items: List[dict], item_type: str = "news", threshold: float = 0.95) -> List[dict]:
+    """Filter out duplicate items based on embedding similarity.
+
+    Args:
+        items: List of items with 'id' and 'embedding' keys.
+        item_type: Type of items.
+        threshold: Similarity threshold for duplicate detection.
+
+    Returns:
+        Filtered list with duplicates removed.
+    """
+    if not USE_SEMANTIC_SCORING:
+        return items
+
+    try:
+        vector_store = get_vector_store()
+        filtered = []
+
+        for item in items:
+            if not item.get("embedding"):
+                filtered.append(item)
+                continue
+
+            # Check if similar item already exists
+            similar = vector_store.find_similar(
+                embedding=item["embedding"],
+                item_type=item_type,
+                threshold=threshold,
+            )
+
+            if not similar:
+                filtered.append(item)
+            else:
+                print(f"  🔄 Duplicate detected: {item['title'][:50]}...")
+
+        return filtered
+
+    except Exception as e:
+        print(f"  ⚠ Duplicate check failed: {e}")
+        return items
 
 
 def fetch_rss_items(feed_url: str, limit: int = 10) -> List[dict]:
@@ -153,15 +377,27 @@ def run_agent() -> str:
             print(f"  ✓ {src}: {len(items)} items")
         for it in items:
             it["source"] = src
-            it["score"] = score_item(it["title"], it.get("summary", ""))
             it["id"] = make_id(it["title"], it["link"])
             all_items.append(it)
 
     print(f"📋 Total news items fetched: {len(all_items)}")
+
+    # Batch score all items using semantic scoring
+    if USE_SEMANTIC_SCORING:
+        print("🧠 Generating embeddings and semantic scores...")
+        all_items = score_items_batch(all_items)
+    else:
+        for it in all_items:
+            it["score"] = score_item(it["title"], it.get("summary", ""))
     
     # Remove already-seen items
     fresh = [it for it in all_items if it["id"] not in seen]
     print(f"🆕 Fresh news items: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
+
+    # Check for semantic duplicates
+    if USE_SEMANTIC_SCORING:
+        fresh = check_duplicates(fresh, item_type="news")
+        print(f"🔍 After duplicate check: {len(fresh)} unique items")
 
     # Sort by score desc
     fresh.sort(key=lambda x: x["score"], reverse=True)
@@ -210,6 +446,10 @@ def run_agent() -> str:
     if summaries_updated:
         save_summaries(summaries_cache)
 
+    # Store embeddings in ChromaDB for picked items
+    if USE_SEMANTIC_SCORING and picked:
+        store_embeddings(picked, item_type="news")
+
     # Combine news and podcasts into unified list, sorted by score
     all_digest_items = []
     
@@ -220,6 +460,8 @@ def run_agent() -> str:
             "title": it["title"],
             "link": it["link"],
             "score": it["score"],
+            "semantic_score": it.get("semantic_score"),
+            "embedding_id": it.get("id"),  # Use item ID as embedding reference
             "source": it.get("source", ""),
             "summary": it.get("ai_summary", ""),
             "show_name": None
@@ -232,6 +474,8 @@ def run_agent() -> str:
             "title": ep["title"],
             "link": ep["link"],
             "score": ep["score"],
+            "semantic_score": ep.get("semantic_score"),
+            "embedding_id": ep.get("id"),
             "source": ep.get("show_name", "Unknown"),
             "summary": ep.get("summary", ""),
             "show_name": ep.get("show_name", "Unknown")
@@ -244,6 +488,8 @@ def run_agent() -> str:
             "title": vid["title"],
             "link": vid["link"],
             "score": vid["score"],
+            "semantic_score": vid.get("semantic_score"),
+            "embedding_id": vid.get("id"),
             "source": vid.get("channel", "Unknown"),
             "summary": vid.get("summary", ""),
             "show_name": vid.get("channel", "Unknown")
@@ -400,6 +646,20 @@ def run_agent() -> str:
             html_path=html_path
         )
         print(f"💾 Saved digest to database")
+
+        # Run topic clustering on the new digest
+        if USE_SEMANTIC_SCORING:
+            try:
+                from tasks.clustering_tasks import cluster_latest_digest
+                print("🏷️ Running topic clustering...")
+                result = cluster_latest_digest()
+                if "error" not in result:
+                    print(f"  ✓ Created {result.get('clusters_created', 0)} topic clusters")
+                else:
+                    print(f"  ⚠ Clustering: {result.get('error')}")
+            except Exception as ce:
+                print(f"  ⚠ Topic clustering failed: {ce}")
+
     except Exception as e:
         print(f"⚠ Database save failed: {e}")
 

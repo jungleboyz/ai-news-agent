@@ -86,7 +86,9 @@ def save_digest_to_db(
                 score=item_data.get("score", 0),
                 summary=item_data.get("summary", ""),
                 show_name=item_data.get("show_name"),
-                position=position
+                position=position,
+                embedding_id=item_data.get("embedding_id"),
+                semantic_score=item_data.get("semantic_score"),
             )
             db.add(item)
 
