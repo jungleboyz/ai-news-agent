@@ -3,8 +3,12 @@
 import os
 from typing import Any, Optional
 
-import chromadb
-from chromadb.config import Settings
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    CHROMADB_AVAILABLE = False
 
 from .embeddings import EmbeddingService
 
