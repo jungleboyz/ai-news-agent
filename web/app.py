@@ -1,17 +1,30 @@
 """FastAPI application entry point."""
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from web.database import init_db
-from web.routes import digests, search, api, semantic_search, clusters
+from web.routes import digests, search, api, semantic_search, clusters, preferences
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown."""
+    # Startup
+    init_db()
+    yield
+    # Shutdown (nothing to clean up)
+
 
 # Initialize FastAPI app
 app = FastAPI(
     title="AI News Agent",
     description="Web interface for browsing AI news digests",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Set up paths
@@ -32,12 +45,7 @@ app.include_router(search.router)
 app.include_router(api.router)
 app.include_router(semantic_search.router)
 app.include_router(clusters.router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup."""
-    init_db()
+app.include_router(preferences.router)
 
 
 if __name__ == "__main__":

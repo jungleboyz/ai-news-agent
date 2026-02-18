@@ -1,6 +1,19 @@
-<article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors">
-    <!-- Position badge -->
+<article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors item-card" data-item-id="{{ item.id }}">
+    <!-- Position badge and action buttons -->
     <div class="absolute top-3 right-3 flex items-center gap-2">
+        <!-- Action buttons -->
+        <button onclick="trackInteraction({{ item.id }}, 'save')" title="Save for later"
+            class="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors opacity-60 hover:opacity-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+        </button>
+        <button onclick="trackInteraction({{ item.id }}, 'hide')" title="Not interested"
+            class="p-1.5 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors opacity-60 hover:opacity-100">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
         {% if item.score > 0 %}
         <span class="px-2 py-1 text-xs font-bold uppercase tracking-wide rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
             Match
@@ -41,7 +54,7 @@
         {% if item.type == 'news' %}
         <li>
             <span class="font-semibold text-slate-100">Link:</span>
-            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">
+            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" onclick="trackInteraction({{ item.id }}, 'click')" class="text-blue-400 hover:text-blue-300 underline break-all item-link">
                 {{ item.link }}
             </a>
         </li>
@@ -56,7 +69,7 @@
         </li>
         <li>
             <span class="font-semibold text-slate-100">Link:</span>
-            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">
+            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" onclick="trackInteraction({{ item.id }}, 'click')" class="text-blue-400 hover:text-blue-300 underline break-all item-link">
                 {{ item.link }}
             </a>
         </li>

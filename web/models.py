@@ -1,6 +1,6 @@
 """SQLAlchemy models for the news agent database."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Float, Boolean
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -82,3 +82,66 @@ class TopicCluster(Base):
 
     def __repr__(self):
         return f"<TopicCluster(id={self.id}, label={self.label}, items={self.item_count})>"
+
+
+class UserProfile(Base):
+    """User profile for personalization (cookie-based, no auth required)."""
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), unique=True, nullable=False, index=True)  # Cookie-based ID
+    name = Column(String(100), nullable=True)  # Optional display name
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Cached preference embedding (JSON array stored as text)
+    preference_embedding = Column(Text, nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    interactions = relationship("Interaction", back_populates="user", cascade="all, delete-orphan")
+    presets = relationship("PreferencePreset", back_populates="user", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<UserProfile(id={self.id}, user_id={self.user_id[:8]}...)>"
+
+
+class Interaction(Base):
+    """User interaction with an item (click, save, skip, hide)."""
+    __tablename__ = "interactions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), ForeignKey("user_profiles.user_id"), nullable=False, index=True)
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=False, index=True)
+    action = Column(String(20), nullable=False)  # "click", "save", "skip", "hide"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Action weights for learning
+    # click: +1.0, save: +3.0, skip: -0.5, hide: -2.0
+
+    # Relationships
+    user = relationship("UserProfile", back_populates="interactions")
+    item = relationship("Item")
+
+    def __repr__(self):
+        return f"<Interaction(user={self.user_id[:8]}..., item={self.item_id}, action={self.action})>"
+
+
+class PreferencePreset(Base):
+    """Named preference preset with interest list."""
+    __tablename__ = "preference_presets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(64), ForeignKey("user_profiles.user_id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    interests = Column(Text, nullable=False)  # JSON array of interest strings
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Cached embedding for this preset
+    preset_embedding = Column(Text, nullable=True)
+
+    # Relationship
+    user = relationship("UserProfile", back_populates="presets")
+
+    def __repr__(self):
+        return f"<PreferencePreset(id={self.id}, name={self.name}, active={self.is_active})>"

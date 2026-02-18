@@ -43,6 +43,9 @@
                     <a href="/search" class="text-sm text-slate-300 hover:text-emerald-400 transition-colors">
                         Search
                     </a>
+                    <a href="/preferences" class="text-sm text-slate-300 hover:text-emerald-400 transition-colors">
+                        Preferences
+                    </a>
                 </div>
             </div>
         </div>
@@ -61,5 +64,34 @@
             </p>
         </div>
     </footer>
+    <!-- Interaction tracking script -->
+    <script>
+        async function trackInteraction(itemId, action) {
+            try {
+                await fetch('/api/interactions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({item_id: itemId, action: action})
+                });
+
+                // Visual feedback for save/hide actions
+                if (action === 'save' || action === 'hide') {
+                    const card = document.querySelector(`[data-item-id="${itemId}"]`);
+                    if (card) {
+                        const indicator = document.createElement('div');
+                        indicator.className = 'fixed bottom-4 right-4 px-4 py-2 rounded-lg text-sm z-50 animate-pulse';
+                        indicator.className += action === 'save'
+                            ? ' bg-emerald-600 text-white'
+                            : ' bg-red-600 text-white';
+                        indicator.textContent = action === 'save' ? 'Saved!' : 'Hidden';
+                        document.body.appendChild(indicator);
+                        setTimeout(() => indicator.remove(), 1500);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to track interaction:', error);
+            }
+        }
+    </script>
 </body>
 </html>
