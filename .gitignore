@@ -1,6 +1,8 @@
 # Environment and secrets
 .env
 *.env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -9,11 +11,27 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Data and caches
 data/
 out/
 *.db
+chromadb_data/
+*.sqlite3
+
+# Vector store
+chroma/
+*.chroma
+
+# MCP configuration (may contain API keys)
+mcp-config.json
+
+# Logs
+*.log
+logs/
 
 # OS files
 .DS_Store
@@ -23,3 +41,17 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+*.egg
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Testing
+.tox/
+.nox/
