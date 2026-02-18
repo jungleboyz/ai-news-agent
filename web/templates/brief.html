@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Brief - AI News Agent{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-white">Daily Brief</h1>
+            <p class="text-slate-400 mt-1">AI-generated executive summary</p>
+        </div>
+
+        <!-- Date selector -->
+        <div class="flex items-center gap-3">
+            <select onchange="window.location.href='/brief?digest_date=' + this.value"
+                class="px-4 py-2 bg-slate-800 text-white rounded-lg border border-slate-700 focus:border-emerald-500 focus:outline-none">
+                {% for d in available_dates %}
+                <option value="{{ d.isoformat() }}" {% if d == digest_date %}selected{% endif %}>
+                    {{ d.strftime('%B %d, %Y') }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    {% if summary.error %}
+    <div class="bg-red-900/30 border border-red-700 rounded-lg p-4 mb-6">
+        <p class="text-red-400">{{ summary.error }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Headline -->
+    <div class="bg-gradient-to-r from-emerald-900/50 to-slate-800 rounded-xl p-6 mb-8 border-l-4 border-emerald-500">
+        <h2 class="text-2xl font-bold text-white">{{ summary.headline or 'Daily Summary' }}</h2>
+        {% if summary.item_count %}
+        <p class="text-slate-400 text-sm mt-2">Based on {{ summary.item_count }} news items</p>
+        {% endif %}
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Main content -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Key Insights -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Key Insights
+                </h3>
+                <ul class="space-y-3">
+                    {% for insight in summary.key_insights or [] %}
+                    <li class="flex items-start gap-3">
+                        <span class="text-emerald-500 mt-1">&#x2022;</span>
+                        <span class="text-slate-200">{{ insight }}</span>
+                    </li>
+                    {% endfor %}
+                    {% if not summary.key_insights %}
+                    <li class="text-slate-400">No insights available</li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Top Stories -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"/>
+                    </svg>
+                    Top Stories
+                </h3>
+                <div class="space-y-4">
+                    {% for story in summary.top_stories or [] %}
+                    <div class="border-l-2 border-slate-600 pl-4 hover:border-emerald-500 transition-colors">
+                        <h4 class="font-medium text-white">{{ story.title }}</h4>
+                        <p class="text-slate-400 text-sm mt-1">{{ story.summary }}</p>
+                        <span class="inline-block mt-2 px-2 py-0.5 bg-slate-700 text-slate-300 text-xs rounded uppercase">
+                            {{ story.category or 'news' }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                    {% if not summary.top_stories %}
+                    <p class="text-slate-400">No top stories available</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Full Summary -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Full Summary
+                </h3>
+                <div class="text-slate-300 leading-relaxed whitespace-pre-line">
+                    {{ summary.full_summary or 'No summary available' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+            <!-- Emerging Trends -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-lg font-bold text-emerald-400 mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                    </svg>
+                    Emerging Trends
+                </h3>
+                <ul class="space-y-2">
+                    {% for trend in summary.emerging_trends or [] %}
+                    <li class="flex items-start gap-2 text-slate-300">
+                        <span class="text-emerald-500">&#x2192;</span>
+                        {{ trend }}
+                    </li>
+                    {% endfor %}
+                    {% if not summary.emerging_trends %}
+                    <li class="text-slate-400">No trends identified</li>
+                    {% endif %}
+                </ul>
+            </div>
+
+            <!-- Actions -->
+            <div class="bg-slate-800 rounded-xl p-6 border border-slate-700">
+                <h3 class="text-sm font-medium text-slate-400 mb-4">Actions</h3>
+                <div class="space-y-3">
+                    <a href="/digest/{{ digest_date.isoformat() }}"
+                        class="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        View Full Digest
+                    </a>
+                    <a href="/chat"
+                        class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
+                        Ask Questions
+                    </a>
+                    <button onclick="copyBrief()"
+                        class="w-full flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                        </svg>
+                        Copy Summary
+                    </button>
+                </div>
+            </div>
+
+            <!-- Generated info -->
+            {% if summary.generated_at %}
+            <div class="text-xs text-slate-500 text-center">
+                Generated: {{ summary.generated_at[:19] }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+async function copyBrief() {
+    const summary = `{{ summary.headline or 'Daily AI News Summary' }}
+
+KEY INSIGHTS:
+{% for insight in summary.key_insights or [] %}
+- {{ insight }}
+{% endfor %}
+
+TOP STORIES:
+{% for story in summary.top_stories or [] %}
+- {{ story.title }}: {{ story.summary }}
+{% endfor %}
+
+{{ summary.full_summary or '' }}
+`;
+
+    try {
+        await navigator.clipboard.writeText(summary);
+        alert('Summary copied to clipboard!');
+    } catch (err) {
+        console.error('Failed to copy:', err);
+    }
+}
+</script>
+{% endblock %}

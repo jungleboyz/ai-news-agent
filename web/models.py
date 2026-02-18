@@ -199,3 +199,18 @@ class DiscoveredSource(Base):
 
     def __repr__(self):
         return f"<DiscoveredSource(domain={self.domain}, from={self.discovered_from})>"
+
+
+class EmailSubscriber(Base):
+    """Email subscriber for daily briefs."""
+    __tablename__ = "email_subscribers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    unsubscribed_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<EmailSubscriber(email={self.email}, active={self.is_active})>"
