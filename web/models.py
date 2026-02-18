@@ -145,3 +145,57 @@ class PreferencePreset(Base):
 
     def __repr__(self):
         return f"<PreferencePreset(id={self.id}, name={self.name}, active={self.is_active})>"
+
+
+class SourceQuality(Base):
+    """Quality metrics for a content source (domain/feed)."""
+    __tablename__ = "source_quality"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    domain = Column(String(255), unique=True, nullable=False, index=True)  # e.g., "arxiv.org"
+    feed_url = Column(Text, nullable=True)  # RSS feed URL if known
+
+    # Quality metrics
+    total_items = Column(Integer, default=0)  # Total items from this source
+    matched_items = Column(Integer, default=0)  # Items that matched AI keywords
+    avg_score = Column(Float, default=0.0)  # Average relevance score
+    total_clicks = Column(Integer, default=0)  # User clicks on items from this source
+    total_saves = Column(Integer, default=0)  # User saves
+    citation_count = Column(Integer, default=0)  # Times cited in HN/Reddit
+
+    # Computed quality score (0-100)
+    quality_score = Column(Float, default=50.0)
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    is_suggested = Column(Boolean, default=False)  # True if auto-discovered
+    last_seen = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<SourceQuality(domain={self.domain}, score={self.quality_score:.1f})>"
+
+
+class DiscoveredSource(Base):
+    """A source discovered from HackerNews or Reddit."""
+    __tablename__ = "discovered_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    domain = Column(String(255), nullable=False, index=True)
+    url = Column(Text, nullable=False)  # Original URL where discovered
+    title = Column(Text)  # Title of the content
+    discovered_from = Column(String(20), nullable=False)  # "hackernews" or "reddit"
+    source_id = Column(String(64))  # HN story ID or Reddit post ID
+    external_score = Column(Integer, default=0)  # HN points or Reddit upvotes
+    comments = Column(Integer, default=0)
+    subreddit = Column(String(100), nullable=True)  # For Reddit discoveries
+
+    # Processing status
+    status = Column(String(20), default="pending")  # pending, approved, rejected
+    reviewed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<DiscoveredSource(domain={self.domain}, from={self.discovered_from})>"

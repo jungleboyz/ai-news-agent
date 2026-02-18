@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from web.database import init_db
-from web.routes import digests, search, api, semantic_search, clusters, preferences
+from web.routes import digests, search, api, semantic_search, clusters, preferences, sources
 
 
 @asynccontextmanager
@@ -46,6 +46,7 @@ app.include_router(api.router)
 app.include_router(semantic_search.router)
 app.include_router(clusters.router)
 app.include_router(preferences.router)
+app.include_router(sources.router)
 
 
 if __name__ == "__main__":

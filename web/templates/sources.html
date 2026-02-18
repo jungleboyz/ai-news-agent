@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Sources - AI News Agent{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
+        <h1 class="text-3xl font-bold text-white">Source Management</h1>
+        <div class="flex gap-3">
+            <button onclick="runDiscovery()" id="discoverBtn"
+                class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                Discover New Sources
+            </button>
+            <button onclick="recalculateScores()"
+                class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
+                Recalculate Scores
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-4 mb-8">
+        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div class="text-2xl font-bold text-white">{{ top_sources|length }}</div>
+            <div class="text-sm text-slate-400">Active Sources</div>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div class="text-2xl font-bold text-emerald-400">{{ suggested_sources|length }}</div>
+            <div class="text-sm text-slate-400">Suggested Sources</div>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div class="text-2xl font-bold text-yellow-400">{{ low_quality_sources|length }}</div>
+            <div class="text-sm text-slate-400">Low Quality</div>
+        </div>
+        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div class="text-2xl font-bold text-blue-400">{{ recent_discoveries|length }}</div>
+            <div class="text-sm text-slate-400">Pending Review</div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex gap-4 mb-6 border-b border-slate-700">
+        <button onclick="showTab('top')" id="tab-top" class="tab-btn px-4 py-2 text-white border-b-2 border-emerald-500">
+            Top Sources
+        </button>
+        <button onclick="showTab('suggested')" id="tab-suggested" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
+            Suggested
+        </button>
+        <button onclick="showTab('discoveries')" id="tab-discoveries" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
+            Discoveries
+        </button>
+        <button onclick="showTab('lowquality')" id="tab-lowquality" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
+            Low Quality
+        </button>
+    </div>
+
+    <!-- Top Sources Tab -->
+    <div id="content-top" class="tab-content">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Items</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Match %</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Clicks</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Citations</th>
+                        <th class="px-4 py-3 text-center text-sm text-slate-400">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700">
+                    {% for source in top_sources %}
+                    <tr class="hover:bg-slate-700/50">
+                        <td class="px-4 py-3">
+                            <span class="text-white font-medium">{{ source.domain }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <span class="font-mono {% if source.quality_score >= 70 %}text-emerald-400{% elif source.quality_score >= 40 %}text-yellow-400{% else %}text-red-400{% endif %}">
+                                {{ "%.1f"|format(source.quality_score) }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-300">{{ source.total_items }}</td>
+                        <td class="px-4 py-3 text-right text-slate-300">
+                            {% if source.total_items > 0 %}
+                            {{ "%.0f"|format(source.matched_items / source.total_items * 100) }}%
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-300">{{ source.total_clicks }}</td>
+                        <td class="px-4 py-3 text-right text-slate-300">{{ source.citation_count }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="toggleSource('{{ source.domain }}')"
+                                class="{% if source.is_active %}bg-emerald-600{% else %}bg-slate-600{% endif %} text-white text-xs px-2 py-1 rounded">
+                                {{ "Active" if source.is_active else "Inactive" }}
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Suggested Sources Tab -->
+    <div id="content-suggested" class="tab-content hidden">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Citations</th>
+                        <th class="px-4 py-3 text-center text-sm text-slate-400">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700">
+                    {% for source in suggested_sources %}
+                    <tr class="hover:bg-slate-700/50">
+                        <td class="px-4 py-3">
+                            <span class="text-white font-medium">{{ source.domain }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <span class="font-mono text-emerald-400">{{ "%.1f"|format(source.quality_score) }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-300">{{ source.citation_count }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="toggleSource('{{ source.domain }}')"
+                                class="bg-emerald-600 text-white text-xs px-3 py-1 rounded hover:bg-emerald-700">
+                                Add to Sources
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not suggested_sources %}
+                    <tr>
+                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">
+                            No suggested sources yet. Run discovery to find new sources.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Discoveries Tab -->
+    <div id="content-discoveries" class="tab-content hidden">
+        <div class="space-y-4">
+            {% for discovery in recent_discoveries %}
+            <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="{% if discovery.discovered_from == 'hackernews' %}bg-orange-600{% else %}bg-blue-600{% endif %} text-white text-xs px-2 py-1 rounded uppercase">
+                                {{ discovery.discovered_from }}
+                            </span>
+                            <span class="text-slate-400 text-sm">{{ discovery.domain }}</span>
+                            <span class="text-slate-500 text-sm">Score: {{ discovery.external_score }}</span>
+                        </div>
+                        <a href="{{ discovery.url }}" target="_blank" class="text-white hover:text-emerald-400">
+                            {{ discovery.title or discovery.url }}
+                        </a>
+                    </div>
+                    <div class="flex gap-2 ml-4">
+                        <button onclick="approveDiscovery({{ discovery.id }})"
+                            class="px-3 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 text-sm">
+                            Approve
+                        </button>
+                        <button onclick="rejectDiscovery({{ discovery.id }})"
+                            class="px-3 py-1 bg-red-600/20 text-red-400 rounded hover:bg-red-600/30 text-sm">
+                            Reject
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not recent_discoveries %}
+            <div class="bg-slate-800 rounded-lg p-8 border border-slate-700 text-center text-slate-400">
+                No pending discoveries. Run discovery to find new content.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Low Quality Tab -->
+    <div id="content-lowquality" class="tab-content hidden">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
+                        <th class="px-4 py-3 text-right text-sm text-slate-400">Match %</th>
+                        <th class="px-4 py-3 text-center text-sm text-slate-400">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700">
+                    {% for source in low_quality_sources %}
+                    <tr class="hover:bg-slate-700/50">
+                        <td class="px-4 py-3">
+                            <span class="text-white font-medium">{{ source.domain }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <span class="font-mono text-red-400">{{ "%.1f"|format(source.quality_score) }}</span>
+                        </td>
+                        <td class="px-4 py-3 text-right text-slate-300">
+                            {% if source.total_items > 0 %}
+                            {{ "%.0f"|format(source.matched_items / source.total_items * 100) }}%
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-center">
+                            <button onclick="toggleSource('{{ source.domain }}')"
+                                class="bg-red-600/20 text-red-400 text-xs px-3 py-1 rounded hover:bg-red-600/30">
+                                Disable
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not low_quality_sources %}
+                    <tr>
+                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">
+                            No low quality sources found.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    // Hide all content
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    // Reset all tabs
+    document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('text-white', 'border-emerald-500');
+        el.classList.add('text-slate-400', 'border-transparent');
+    });
+
+    // Show selected content
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+    // Highlight selected tab
+    const tab = document.getElementById('tab-' + tabName);
+    tab.classList.add('text-white', 'border-emerald-500');
+    tab.classList.remove('text-slate-400', 'border-transparent');
+}
+
+async function runDiscovery() {
+    const btn = document.getElementById('discoverBtn');
+    btn.disabled = true;
+    btn.textContent = 'Discovering...';
+
+    try {
+        const response = await fetch('/api/sources/discover', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`Discovery complete!\nHN Top: ${data.results.hackernews_top}\nHN New: ${data.results.hackernews_new}\nReddit: ${data.results.reddit}\nDomains: ${data.results.unique_domains}`);
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('Discovery failed: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Discover New Sources';
+    }
+}
+
+async function recalculateScores() {
+    try {
+        const response = await fetch('/api/sources/recalculate', { method: 'POST' });
+        const data = await response.json();
+        alert(`Recalculated ${data.updated_count} source scores`);
+        window.location.reload();
+    } catch (error) {
+        alert('Recalculation failed: ' + error.message);
+    }
+}
+
+async function toggleSource(domain) {
+    try {
+        const response = await fetch(`/api/sources/${encodeURIComponent(domain)}/toggle`, { method: 'PUT' });
+        const data = await response.json();
+        window.location.reload();
+    } catch (error) {
+        alert('Toggle failed: ' + error.message);
+    }
+}
+
+async function approveDiscovery(id) {
+    try {
+        const response = await fetch(`/api/sources/discoveries/${id}/approve`, { method: 'PUT' });
+        if (response.ok) {
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('Approval failed: ' + error.message);
+    }
+}
+
+async function rejectDiscovery(id) {
+    try {
+        const response = await fetch(`/api/sources/discoveries/${id}/reject`, { method: 'PUT' });
+        if (response.ok) {
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('Rejection failed: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
