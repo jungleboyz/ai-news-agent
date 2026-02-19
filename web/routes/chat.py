@@ -356,8 +356,20 @@ async def send_brief_email(
     digest_date: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    """Send daily brief to a specific email."""
+    """Send daily brief to a specific email (subscribers only)."""
     from services.email_delivery import EmailDeliveryService
+
+    # Only allow sending to active subscribers
+    subscriber = db.query(EmailSubscriber).filter(
+        EmailSubscriber.email == to_email.lower().strip(),
+        EmailSubscriber.is_active == True,
+    ).first()
+
+    if not subscriber:
+        raise HTTPException(
+            status_code=403,
+            detail="Email must belong to an active subscriber"
+        )
 
     service = EmailDeliveryService()
 
