@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from config import settings
 from services.personalization import PersonalizationService, create_default_presets_for_user
 from web.database import get_db
 from web.models import UserProfile, Interaction, PreferencePreset, Item
@@ -36,6 +37,7 @@ def get_or_create_user_id(request: Request, response: Response) -> str:
             max_age=COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
+            secure=settings.is_production,
         )
     return user_id
 

@@ -39,9 +39,10 @@
         <div id="suggestionsContainer" class="px-4 pb-2">
             <div class="flex flex-wrap gap-2">
                 {% for suggestion in suggestions %}
-                <button onclick="sendMessage('{{ suggestion }}')"
+                <button onclick="sendMessage(this.dataset.msg)"
+                    data-msg="{{ suggestion|e }}"
                     class="px-3 py-1.5 bg-slate-700 text-slate-300 rounded-full text-sm hover:bg-slate-600 hover:text-white transition-colors">
-                    {{ suggestion }}
+                    {{ suggestion|e }}
                 </button>
                 {% endfor %}
             </div>
@@ -70,6 +71,7 @@
     </div>
 </div>
 
+<script src="https://unpkg.com/dompurify@3.0.6/dist/purify.min.js"></script>
 <script>
 let conversationId = null;
 let isStreaming = false;
@@ -225,11 +227,16 @@ function escapeHtml(text) {
 
 function formatMarkdown(text) {
     // Basic markdown formatting
-    return text
+    let html = text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/`(.*?)`/g, '<code class="bg-slate-800 px-1 rounded">$1</code>')
         .replace(/\n/g, '<br>');
+    // Sanitize to prevent XSS
+    return DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['strong', 'em', 'code', 'br', 'a', 'ul', 'ol', 'li', 'p'],
+        ALLOWED_ATTR: ['class', 'href', 'target', 'rel'],
+    });
 }
 
 // Focus input on load

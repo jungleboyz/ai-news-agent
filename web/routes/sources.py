@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from services.source_discovery import SourceDiscoveryService, DiscoveredItem
 from services.source_scoring import SourceScoringService, process_discovered_items
@@ -14,6 +16,7 @@ from web.models import SourceQuality, DiscoveredSource
 
 
 router = APIRouter(tags=["sources"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class SourceResponse(BaseModel):
@@ -143,7 +146,9 @@ async def get_source_stats(db: Session = Depends(get_db)):
 
 
 @router.post("/api/sources/discover")
+@limiter.limit("5/hour")
 async def run_discovery(
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):

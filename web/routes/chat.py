@@ -1,14 +1,18 @@
 """Chat and Daily Brief routes."""
 import json
+import re
 import uuid
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from config import settings
 from services.chat_rag import ChatRAGService, ChatMessage, conversation_manager
 from services.daily_brief import DailyBriefService
 from web.database import get_db
@@ -16,11 +20,12 @@ from web.models import Digest, EmailSubscriber
 
 
 router = APIRouter(tags=["chat"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 # Request/Response models
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=2000)
     conversation_id: Optional[str] = None
 
 
@@ -138,7 +143,9 @@ async def chat_page(
 
 
 @router.post("/api/chat")
+@limiter.limit("20/minute")
 async def chat(
+    request: Request,
     chat_request: ChatRequest,
     db: Session = Depends(get_db),
 ):
@@ -170,12 +177,17 @@ async def chat(
 
 
 @router.get("/api/chat/stream")
+@limiter.limit("20/minute")
 async def chat_stream(
+    request: Request,
     message: str,
     conversation_id: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     """Stream a chat response using Server-Sent Events."""
+    if len(message) > 2000:
+        raise HTTPException(status_code=400, detail="Message too long (max 2000 characters)")
+
     service = ChatRAGService()
 
     # Get or create conversation ID
@@ -219,7 +231,8 @@ async def chat_stream(
             conversation_manager.add_message(conv_id, assistant_message)
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            error_msg = str(e) if settings.is_development else "An error occurred"
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -267,19 +280,29 @@ async def get_suggestions(db: Session = Depends(get_db)):
 # Email Subscription Routes
 
 class SubscribeRequest(BaseModel):
-    email: str
-    name: Optional[str] = None
+    email: str = Field(..., max_length=254)
+    name: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        if not re.match(pattern, v):
+            raise ValueError("Invalid email format")
+        return v.lower().strip()
 
 
 @router.post("/api/subscribe")
+@limiter.limit("10/hour")
 async def subscribe(
-    request: SubscribeRequest,
+    request: Request,
+    subscribe_request: SubscribeRequest,
     db: Session = Depends(get_db),
 ):
     """Subscribe to daily brief emails."""
     # Check if already subscribed
     existing = db.query(EmailSubscriber).filter(
-        EmailSubscriber.email == request.email
+        EmailSubscriber.email == subscribe_request.email
     ).first()
 
     if existing:
@@ -294,8 +317,8 @@ async def subscribe(
 
     # Create new subscriber
     subscriber = EmailSubscriber(
-        email=request.email,
-        name=request.name,
+        email=subscribe_request.email,
+        name=subscribe_request.name,
     )
     db.add(subscriber)
     db.commit()
@@ -326,7 +349,9 @@ async def unsubscribe(
 
 
 @router.post("/api/brief/send")
+@limiter.limit("5/hour")
 async def send_brief_email(
+    request: Request,
     to_email: str,
     digest_date: Optional[str] = None,
     db: Session = Depends(get_db),
