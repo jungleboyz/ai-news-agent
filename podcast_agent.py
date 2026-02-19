@@ -304,15 +304,13 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
     Returns a list of picked episodes with transcripts and summaries.
 
     Args:
-        skip_transcription: If True, skip audio transcription (use cached or description).
-                          If None, check SKIP_PODCAST_TRANSCRIPTION env var.
+        skip_transcription: Deprecated — transcription now uses the smart cascade
+                          (web scrape → YouTube → RSS description). No audio download.
     """
-    from transcriber import transcribe_episode
+    from services.transcript_service import TranscriptService
     from summarizer import summarize_podcast, generate_fallback_podcast_summary
 
-    # Check environment variable if not explicitly set
-    if skip_transcription is None:
-        skip_transcription = os.getenv("SKIP_PODCAST_TRANSCRIPTION", "").lower() in ("1", "true", "yes")
+    ts = TranscriptService()
     
     ensure_out_dir()
     seen = load_podcast_seen()
@@ -375,27 +373,25 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
         if len(picked) >= DIGEST_TOP_PODCASTS:
             break
         
-        # Skip if no audio URL
-        if not ep.get("audio_url"):
-            print(f"  ⚠ Skipping '{ep['title'][:50]}...' - no audio URL")
-            continue
-        
-        audio_url = ep["audio_url"]
-        
-        # Get or generate transcript
-        if audio_url in transcripts_cache:
-            transcript = transcripts_cache[audio_url]
-        elif skip_transcription:
-            # Use description as fallback when transcription is skipped
-            transcript = ep.get("description", "")
+        # Use episode link or audio_url as cache key
+        cache_key = ep.get("audio_url") or ep["link"]
+
+        # Get or generate transcript via smart cascade
+        if cache_key in transcripts_cache:
+            transcript = transcripts_cache[cache_key]
+            transcript_source = "cache"
         else:
-            transcript = transcribe_episode(audio_url, minutes=TRANSCRIBE_MINUTES)
+            transcript, transcript_source = ts.get_transcript(
+                title=ep["title"],
+                link=ep["link"],
+                audio_url=ep.get("audio_url"),
+                description=ep.get("description", ""),
+            )
             if transcript:
-                transcripts_cache[audio_url] = transcript
+                transcripts_cache[cache_key] = transcript
                 transcripts_updated = True
-            else:
-                # Use description as fallback if transcription fails
-                transcript = ep.get("description", "")
+
+        print(f"  📝 {ep['title'][:50]}... [transcript: {transcript_source}]")
         
         ep["transcript"] = transcript
 
@@ -403,8 +399,8 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
         ep = score_episode_semantic(ep, transcript)
         
         # Get or generate summary with 5 key learnings
-        if audio_url in summaries_cache:
-            summary = summaries_cache[audio_url]
+        if cache_key in summaries_cache:
+            summary = summaries_cache[cache_key]
         else:
             # Summarize using transcript or description
             summary_text = transcript if transcript else ep.get("description", "")
@@ -414,7 +410,7 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
                     summary = generate_fallback_podcast_summary(ep["title"], ep.get("show_name", ""))
             else:
                 summary = generate_fallback_podcast_summary(ep["title"], ep.get("show_name", ""))
-            summaries_cache[audio_url] = summary
+            summaries_cache[cache_key] = summary
             summaries_updated = True
         
         ep["summary"] = summary

@@ -31,14 +31,41 @@ def get_client():
         return None
     return openai.OpenAI(api_key=api_key)
 
+# Cache for batch-prefetched article content (populated by agent.py)
+_article_cache: dict[str, str] = {}
+
+
+def set_article_cache(cache: dict[str, str]) -> None:
+    """Set the article content cache (called by agent.py after batch pre-fetch)."""
+    global _article_cache
+    _article_cache = cache
+
+
 def fetch_article_text(url):
+    """Fetch article text with cascade: cache → Firecrawl → BeautifulSoup."""
+    # 1. Check batch pre-fetch cache
+    if url in _article_cache:
+        return _article_cache[url]
+
+    # 2. Try Firecrawl
+    try:
+        from services.firecrawl_service import get_firecrawl_service
+        fc = get_firecrawl_service()
+        if fc.available:
+            text = fc.scrape_article(url)
+            if text:
+                return text[:4000]
+    except Exception:
+        pass
+
+    # 3. Fall back to BeautifulSoup
     try:
         html = requests.get(url, timeout=5).text
         soup = BeautifulSoup(html, "html.parser")
         paragraphs = soup.find_all("p")
         text = " ".join([p.text for p in paragraphs])
         return text[:3000]  # Trim to avoid token limits
-    except Exception as e:
+    except Exception:
         return None
 
 def generate_fallback_summary(url, title=""):

@@ -14,7 +14,7 @@ from config import settings
 
 # Paths that don't require authentication
 PUBLIC_PATHS = {"/login", "/health", "/favicon.ico"}
-PUBLIC_PREFIXES = ("/static/",)
+PUBLIC_PREFIXES = ("/static/", "/cron/")
 
 # Session duration: 30 days
 SESSION_MAX_AGE = 30 * 24 * 60 * 60

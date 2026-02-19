@@ -294,6 +294,20 @@ class RedditScraper:
 class SourceDiscoveryService:
     """Main service for discovering new AI content sources."""
 
+    # Rotating AI search queries for Firecrawl discovery
+    FIRECRAWL_QUERIES = [
+        "latest AI research breakthroughs",
+        "new LLM models released this week",
+        "AI agent frameworks and tools",
+        "generative AI startup funding",
+        "enterprise AI adoption news",
+        "AI safety and alignment research",
+        "open source AI models and tools",
+        "AI coding assistants and developer tools",
+        "multimodal AI applications",
+        "AI regulation and policy updates",
+    ]
+
     def __init__(self):
         self.hn_scraper = HackerNewsScraper()
         self.reddit_scraper = RedditScraper()
@@ -310,11 +324,76 @@ class SourceDiscoveryService:
             self.reddit_scraper.fetch_ai_posts(),
         )
 
-        return {
+        # Also run Firecrawl search (sync, so run in executor)
+        firecrawl_items = self.discover_from_firecrawl_search()
+
+        results = {
             "hackernews_top": hn_top,
             "hackernews_new": hn_new,
             "reddit": reddit,
         }
+        if firecrawl_items:
+            results["firecrawl_search"] = firecrawl_items
+
+        return results
+
+    def discover_from_firecrawl_search(self, max_searches: int = 5) -> list[DiscoveredItem]:
+        """Discover AI content using Firecrawl web search.
+
+        Uses rotating AI-related queries, extracts domains, and feeds
+        into the existing DiscoveredItem pipeline. Capped at max_searches per run.
+        """
+        try:
+            from services.firecrawl_service import get_firecrawl_service
+        except ImportError:
+            return []
+
+        fc = get_firecrawl_service()
+        if not fc.available:
+            return []
+
+        import random
+        queries = random.sample(
+            self.FIRECRAWL_QUERIES,
+            min(max_searches, len(self.FIRECRAWL_QUERIES)),
+        )
+
+        items = []
+        for query in queries:
+            results = fc.search(query, limit=5)
+            for result in results:
+                url = result.get("url", "")
+                title = result.get("title", "")
+                if not url or not title:
+                    continue
+
+                domain = urlparse(url).netloc.replace("www.", "") if url else None
+                relevance = self.hn_scraper._calculate_ai_relevance(title, url)
+                if relevance <= 0:
+                    relevance = 0.5  # Default relevance for search results
+
+                items.append(DiscoveredItem(
+                    title=title,
+                    url=url,
+                    source="firecrawl_search",
+                    source_id=f"fc-{hash(url) & 0xFFFFFFFF:08x}",
+                    score=0,
+                    comments=0,
+                    created_at=datetime.now(),
+                    domain=domain,
+                    ai_relevance=relevance,
+                ))
+
+        # Dedupe by URL
+        seen_urls = set()
+        unique = []
+        for item in items:
+            if item.url not in seen_urls:
+                seen_urls.add(item.url)
+                unique.append(item)
+
+        unique.sort(key=lambda x: x.ai_relevance, reverse=True)
+        return unique[:50]
 
     async def discover_hackernews(self) -> list[DiscoveredItem]:
         """Discover AI stories from HackerNews."""

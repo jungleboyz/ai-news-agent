@@ -187,6 +187,57 @@ async def health_check():
     }
 
 
+# --- Cron / Scheduler endpoints ---
+
+# Runtime scheduler state (can be toggled without restarting)
+_scheduler_enabled: bool = settings.scheduler_enabled
+
+
+@app.post("/cron/run-digest")
+async def cron_run_digest(request: Request):
+    """Triggered by Railway cron. Runs the full digest pipeline."""
+    # Verify cron secret to prevent unauthorized triggers
+    auth = request.headers.get("Authorization")
+    if auth != f"Bearer {settings.cron_secret}":
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    # Check if scheduler is enabled
+    if not _scheduler_enabled:
+        return {"status": "skipped", "reason": "Scheduler disabled"}
+
+    # Run agent in background thread (non-blocking)
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _run():
+        from agent import run_agent
+        run_agent()
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
+
+    from datetime import datetime as dt
+    return {"status": "started", "time": dt.utcnow().isoformat()}
+
+
+@app.get("/api/admin/scheduler")
+async def get_scheduler_status():
+    """Get scheduler status."""
+    return {"enabled": _scheduler_enabled}
+
+
+@app.post("/api/admin/scheduler")
+async def toggle_scheduler(request: Request):
+    """Toggle scheduler on/off."""
+    global _scheduler_enabled
+    body = await request.json()
+    if "enabled" in body:
+        _scheduler_enabled = bool(body["enabled"])
+    else:
+        _scheduler_enabled = not _scheduler_enabled
+    return {"enabled": _scheduler_enabled}
+
+
 if __name__ == "__main__":
     import uvicorn
 

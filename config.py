@@ -20,6 +20,11 @@ class Settings:
     # API Keys
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+    firecrawl_api_key: Optional[str] = os.getenv("FIRECRAWL_API_KEY")
+
+    # Cron / Scheduler
+    cron_secret: str = os.getenv("CRON_SECRET", "dev-cron-secret")
+    scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
 
     # Database
     database_url: Optional[str] = os.getenv("DATABASE_URL")

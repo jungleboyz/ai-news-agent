@@ -405,6 +405,21 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
         if initial_score > 0 or any(kw in video['title'].lower() for kw in ['ai', 'gpt', 'llm', 'machine learning']):
             print(f"  🔍 Fetching transcript: {video['title'][:50]}...")
             transcript = fetch_youtube_transcript(video_id)
+            # Fallback: try web transcript scraping if YouTube transcript unavailable
+            if not transcript:
+                try:
+                    from services.transcript_service import TranscriptService
+                    ts = TranscriptService()
+                    transcript, _source = ts.get_transcript(
+                        title=video['title'],
+                        link=video['link'],
+                        video_id=video_id,
+                    )
+                    if _source == "description":
+                        # Description-only isn't a real transcript for videos
+                        transcript = None
+                except Exception:
+                    pass
 
         # Re-score with transcript (using semantic scoring if enabled)
         video['transcript'] = transcript

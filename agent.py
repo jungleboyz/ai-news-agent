@@ -411,6 +411,35 @@ def run_agent() -> str:
     per_source_count = {}
     summaries_updated = False
 
+    # Batch pre-fetch article content via Firecrawl (if available)
+    # Collect candidate URLs first (respecting per-source cap)
+    candidate_urls = []
+    _temp_source_count = {}
+    for it in fresh:
+        src = it["source"]
+        _temp_source_count[src] = _temp_source_count.get(src, 0)
+        if _temp_source_count[src] >= per_source_cap:
+            continue
+        if it["link"] not in summaries_cache:
+            candidate_urls.append(it["link"])
+        _temp_source_count[src] += 1
+        if sum(1 for v in _temp_source_count.values() if v > 0) >= DIGEST_TOP_N * 2:
+            break
+
+    if candidate_urls:
+        try:
+            from services.firecrawl_service import get_firecrawl_service
+            from summarizer import set_article_cache
+            fc = get_firecrawl_service()
+            if fc.available:
+                print(f"🔥 Batch pre-fetching {len(candidate_urls)} articles via Firecrawl...")
+                prefetched = fc.batch_scrape(candidate_urls)
+                if prefetched:
+                    set_article_cache(prefetched)
+                    print(f"  ✓ Pre-fetched {len(prefetched)} articles")
+        except Exception as e:
+            print(f"  ⚠ Batch pre-fetch failed: {e}")
+
     for it in fresh:
         # Keep keyword matches first, but allow fallback items too
         src = it["source"]
