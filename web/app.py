@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi.util import get_remote_address as _default_key
 from slowapi.errors import RateLimitExceeded
 
 from config import settings
@@ -25,8 +25,16 @@ from web.middleware.security import SecurityHeadersMiddleware
 from web.routes import digests, search, api, semantic_search, clusters, preferences, sources, chat
 
 
+def get_real_ip(request: Request) -> str:
+    """Get real client IP from behind Railway's proxy."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 # Rate limiter (shared across routes)
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_real_ip)
 
 
 @asynccontextmanager

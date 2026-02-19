@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from services.source_discovery import SourceDiscoveryService, DiscoveredItem
 from services.source_scoring import SourceScoringService, process_discovered_items
@@ -16,7 +15,14 @@ from web.models import SourceQuality, DiscoveredSource
 
 
 router = APIRouter(tags=["sources"])
-limiter = Limiter(key_func=get_remote_address)
+
+def _get_real_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+limiter = Limiter(key_func=_get_real_ip)
 
 
 class SourceResponse(BaseModel):
