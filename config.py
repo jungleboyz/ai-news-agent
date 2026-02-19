@@ -14,6 +14,7 @@ class Settings:
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
     allowed_hosts: list[str] = os.getenv("ALLOWED_HOSTS", "*").split(",")
+    site_username: str = os.getenv("SITE_USERNAME", "admin")
     site_password: Optional[str] = os.getenv("SITE_PASSWORD")
 
     # API Keys

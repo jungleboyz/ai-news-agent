@@ -17,7 +17,7 @@ from web.database import init_db
 from web.middleware.auth import (
     AuthMiddleware,
     create_session_cookie,
-    verify_password,
+    verify_credentials,
     SESSION_COOKIE,
     SESSION_MAX_AGE,
 )
@@ -134,9 +134,10 @@ async def login_page(request: Request, error: str = ""):
 async def login_submit(request: Request):
     """Handle login form submission."""
     form = await request.form()
+    username = form.get("username", "")
     password = form.get("password", "")
 
-    if verify_password(password):
+    if verify_credentials(username, password):
         response = RedirectResponse(url="/", status_code=302)
         response.set_cookie(
             key=SESSION_COOKIE,

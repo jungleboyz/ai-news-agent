@@ -57,12 +57,15 @@ def verify_session_cookie(cookie: str) -> bool:
         return False
 
 
-def verify_password(password: str) -> bool:
-    """Check if the provided password matches SITE_PASSWORD."""
+def verify_credentials(username: str, password: str) -> bool:
+    """Check if the provided username and password match."""
     site_password = settings.site_password
     if not site_password:
         return False
-    return hmac.compare_digest(password, site_password)
+    return (
+        hmac.compare_digest(username, settings.site_username)
+        and hmac.compare_digest(password, site_password)
+    )
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
