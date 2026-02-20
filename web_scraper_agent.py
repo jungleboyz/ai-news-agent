@@ -31,7 +31,7 @@ WEB_SEEN_PATH = os.path.join(OUT_DIR, "web_seen.json")
 WEB_SUMMARIES_PATH = os.path.join(OUT_DIR, "web_summaries.json")
 MAX_LINKS_PER_PAGE = 15
 LISTING_CONTENT_LENGTH = 8000
-RATE_LIMIT_DELAY = 0.3  # seconds between listing page scrapes
+RATE_LIMIT_DELAY = 2.0  # seconds between listing page scrapes
 
 # Enable/disable semantic scoring
 USE_SEMANTIC_SCORING = True
