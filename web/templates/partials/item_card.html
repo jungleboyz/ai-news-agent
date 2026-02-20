@@ -1,4 +1,21 @@
-<article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors item-card" data-item-id="{{ item.id }}">
+{% set is_hero = item.position <= 1 %}
+{% set is_featured = item.position >= 2 and item.position <= 3 %}
+
+<article class="relative rounded-lg border p-6 shadow-sm transition-colors item-card
+    {% if is_hero %}
+        border-neon-cyan/40 bg-gradient-to-br from-slate-900 via-slate-900/90 to-cyan-950/30 hover:border-neon-cyan/60
+    {% elif is_featured %}
+        border-emerald-500/30 bg-slate-900/80 hover:border-emerald-500/50
+    {% else %}
+        border-slate-800 bg-slate-900/70 hover:bg-slate-900
+    {% endif %}"
+    data-item-id="{{ item.id }}">
+
+    {% if is_hero %}
+    <!-- Hero glow accent -->
+    <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-neon-cyan to-transparent"></div>
+    {% endif %}
+
     <!-- Position badge and action buttons -->
     <div class="absolute top-3 right-3 flex items-center gap-2">
         <!-- Action buttons -->
@@ -26,7 +43,11 @@
     </div>
 
     <div class="flex items-start gap-3 mb-3">
-        <span class="text-sm font-mono text-slate-500">{{ item.position }}.</span>
+        <!-- Position number with tier styling -->
+        <span class="text-sm font-mono flex-shrink-0
+            {% if is_hero %}text-neon-cyan font-bold{% elif is_featured %}text-emerald-400{% else %}text-slate-500{% endif %}">
+            {{ item.position }}.
+        </span>
         <div class="flex-1">
             <!-- Type indicator -->
             <div class="flex items-center gap-2 mb-1">
@@ -37,14 +58,28 @@
                 <span class="text-lg">&#x1F399;&#xFE0F;</span>
                 <span class="text-xs text-slate-400 uppercase">Podcast</span>
                 {% endif %}
+                {% if item.cluster_label %}
+                <span class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                    {{ item.cluster_label }}
+                </span>
+                {% endif %}
             </div>
 
-            <!-- Title -->
-            <h2 class="text-xl font-semibold text-slate-50 leading-tight pr-24">{{ item.title }}</h2>
+            <!-- Title with tier sizing -->
+            <h2 class="font-semibold text-slate-50 leading-tight pr-24
+                {% if is_hero %}text-2xl{% elif is_featured %}text-xl{% else %}text-lg{% endif %}">
+                {{ item.title }}
+            </h2>
 
             <!-- Score badge -->
             <div class="mt-2 flex items-center gap-2 text-sm">
-                <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono">[{{ item.score }}]</span>
+                <span class="px-2 py-0.5 rounded font-mono
+                    {% if item.score >= 8 %}bg-emerald-500/20 text-emerald-300
+                    {% elif item.score >= 5 %}bg-blue-500/20 text-blue-300
+                    {% elif item.score > 0 %}bg-slate-800 text-slate-300
+                    {% else %}bg-slate-800/50 text-slate-500{% endif %}">
+                    [{{ item.score }}]
+                </span>
             </div>
         </div>
     </div>
@@ -82,7 +117,16 @@
         <p class="font-semibold text-slate-100 mb-2">
             {% if item.type == 'news' %}Why this matters:{% else %}Summary:{% endif %}
         </p>
-        <div class="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">{{ item.summary }}</div>
+        <div class="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap
+            {% if not is_hero and not is_featured %}line-clamp-4{% endif %}">
+            {{ item.summary }}
+        </div>
+        {% if not is_hero and not is_featured and item.summary|length > 300 %}
+        <button onclick="this.previousElementSibling.classList.remove('line-clamp-4'); this.remove();"
+            class="mt-2 text-xs text-neon-cyan hover:underline">
+            Read more
+        </button>
+        {% endif %}
     </div>
     {% endif %}
 </article>

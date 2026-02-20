@@ -66,30 +66,34 @@
                     </span>
                 </a>
 
+                <!-- Mobile menu button -->
+                <button onclick="document.getElementById('nav-menu').classList.toggle('hidden')" class="md:hidden p-2 text-slate-400 hover:text-neon-cyan">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                </button>
+
                 <!-- Nav Links -->
-                <div class="flex items-center gap-6">
-                    <a href="/" class="cyber-nav-link text-sm font-medium tracking-wide">
-                        HOME
-                    </a>
-                    <a href="/digests" class="cyber-nav-link text-sm font-medium tracking-wide">
-                        DIGESTS
-                    </a>
-                    <a href="/topics" class="cyber-nav-link text-sm font-medium tracking-wide">
-                        TOPICS
-                    </a>
-                    <a href="/search" class="cyber-nav-link text-sm font-medium tracking-wide">
-                        SEARCH
-                    </a>
-                    <a href="/brief" class="cyber-nav-link text-sm font-medium tracking-wide">
+                <div id="nav-menu" class="hidden md:flex items-center gap-6 absolute md:static top-16 left-0 right-0 md:top-auto bg-cyber-dark md:bg-transparent border-b md:border-0 border-slate-800 p-4 md:p-0 flex-col md:flex-row z-50">
+                    <a href="/brief" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
                         BRIEF
                     </a>
-                    <a href="/chat" class="cyber-nav-link text-sm font-medium tracking-wide text-neon-cyan">
+                    <a href="/digests" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                        DIGESTS
+                    </a>
+                    <a href="/topics" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                        TOPICS
+                    </a>
+                    <a href="/search" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                        SEARCH
+                    </a>
+                    <a href="/chat" class="cyber-nav-link text-sm font-medium tracking-wide text-neon-cyan w-full md:w-auto py-2 md:py-0">
                         CHAT
                     </a>
-                    <a href="/sources" class="cyber-nav-link text-sm font-medium tracking-wide">
+                    <a href="/sources" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
                         SOURCES
                     </a>
-                    <a href="/preferences" class="cyber-nav-link text-sm font-medium tracking-wide">
+                    <a href="/preferences" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
                         PREFS
                     </a>
                 </div>

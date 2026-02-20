@@ -48,14 +48,68 @@
             <span>&middot;</span>
             <span class="font-semibold text-slate-300">{{ items|length }} items in digest</span>
         </div>
+
+        <!-- Vertical Filter Buttons -->
+        <div class="flex flex-wrap items-center gap-2 pt-2">
+            <span class="text-xs text-slate-500 uppercase tracking-wider mr-1">Filter:</span>
+            <button onclick="filterDigest('all')" data-filter="all"
+                class="digest-filter active px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md border transition-all
+                       border-neon-cyan/50 text-neon-cyan bg-neon-cyan/10">
+                All
+            </button>
+            <button onclick="filterDigest('marketing')" data-filter="marketing"
+                class="digest-filter px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md border transition-all
+                       border-slate-700 text-slate-400 hover:border-neon-magenta/50 hover:text-neon-magenta">
+                Marketing
+            </button>
+            <button onclick="filterDigest('finance')" data-filter="finance"
+                class="digest-filter px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md border transition-all
+                       border-slate-700 text-slate-400 hover:border-neon-green/50 hover:text-neon-green">
+                Finance
+            </button>
+            <button onclick="filterDigest('enterprise')" data-filter="enterprise"
+                class="digest-filter px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md border transition-all
+                       border-slate-700 text-slate-400 hover:border-neon-purple/50 hover:text-neon-purple">
+                Enterprise
+            </button>
+            <button onclick="filterDigest('research')" data-filter="research"
+                class="digest-filter px-3 py-1.5 text-xs font-semibold uppercase tracking-wide rounded-md border transition-all
+                       border-slate-700 text-slate-400 hover:border-yellow-500/50 hover:text-yellow-400">
+                Research
+            </button>
+            <span id="filter-count" class="text-xs text-slate-500 ml-2"></span>
+        </div>
     </header>
 
-    <!-- Items -->
+    <!-- Items (grouped by cluster if available) -->
+    {% if clustered_items %}
+    <section class="space-y-10">
+        {% for cluster_label, cluster_items in clustered_items.items() %}
+        <div class="cluster-group">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-px flex-1 bg-gradient-to-r from-slate-800 to-transparent"></div>
+                <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-300 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700">
+                    {{ cluster_label }}
+                    <span class="text-slate-500 ml-1">({{ cluster_items|length }})</span>
+                </h3>
+                <div class="h-px flex-1 bg-gradient-to-l from-slate-800 to-transparent"></div>
+            </div>
+            <div class="space-y-4">
+                {% for item in cluster_items %}
+                {% include "partials/item_card.html" %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% else %}
+    <!-- Flat list (no clusters) -->
     <section class="space-y-6">
         {% for item in items %}
         {% include "partials/item_card.html" %}
         {% endfor %}
     </section>
+    {% endif %}
 
     <!-- Empty state -->
     {% if not items %}
@@ -64,4 +118,67 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+// Vertical filter keywords
+const FILTER_KEYWORDS = {
+    marketing: ['marketing', 'brand', 'advertising', 'ad tech', 'seo', 'content strategy', 'social media', 'campaign', 'martech', 'personalization', 'customer engagement', 'copywriting', 'creative'],
+    finance: ['finance', 'fintech', 'banking', 'trading', 'investment', 'hedge fund', 'wall street', 'financial', 'payments', 'insurance', 'crypto', 'blockchain', 'defi', 'quant'],
+    enterprise: ['enterprise', 'saas', 'b2b', 'business', 'productivity', 'workflow', 'automation', 'crm', 'erp', 'salesforce', 'microsoft', 'corporate', 'it infrastructure', 'devops', 'platform'],
+    research: ['research', 'paper', 'arxiv', 'benchmark', 'model', 'llm', 'gpt', 'transformer', 'training', 'dataset', 'neural', 'deep learning', 'machine learning', 'diffusion', 'reasoning', 'multimodal']
+};
+
+function filterDigest(vertical) {
+    const cards = document.querySelectorAll('.item-card');
+    const groups = document.querySelectorAll('.cluster-group');
+    let visibleCount = 0;
+
+    // Update button styles
+    document.querySelectorAll('.digest-filter').forEach(btn => {
+        btn.classList.remove('active', 'border-neon-cyan/50', 'text-neon-cyan', 'bg-neon-cyan/10',
+            'border-neon-magenta/50', 'text-neon-magenta', 'bg-neon-magenta/10',
+            'border-neon-green/50', 'text-neon-green', 'bg-neon-green/10',
+            'border-neon-purple/50', 'text-neon-purple', 'bg-neon-purple/10',
+            'border-yellow-500/50', 'text-yellow-400', 'bg-yellow-500/10');
+        btn.classList.add('border-slate-700', 'text-slate-400');
+    });
+
+    const activeBtn = document.querySelector(`[data-filter="${vertical}"]`);
+    activeBtn.classList.remove('border-slate-700', 'text-slate-400');
+    activeBtn.classList.add('active');
+
+    const colorMap = {
+        all: ['border-neon-cyan/50', 'text-neon-cyan', 'bg-neon-cyan/10'],
+        marketing: ['border-neon-magenta/50', 'text-neon-magenta', 'bg-neon-magenta/10'],
+        finance: ['border-neon-green/50', 'text-neon-green', 'bg-neon-green/10'],
+        enterprise: ['border-neon-purple/50', 'text-neon-purple', 'bg-neon-purple/10'],
+        research: ['border-yellow-500/50', 'text-yellow-400', 'bg-yellow-500/10']
+    };
+    activeBtn.classList.add(...colorMap[vertical]);
+
+    if (vertical === 'all') {
+        cards.forEach(card => { card.style.display = ''; visibleCount++; });
+        groups.forEach(g => g.style.display = '');
+        document.getElementById('filter-count').textContent = '';
+        return;
+    }
+
+    const keywords = FILTER_KEYWORDS[vertical] || [];
+
+    cards.forEach(card => {
+        const text = (card.textContent || '').toLowerCase();
+        const matches = keywords.some(kw => text.includes(kw));
+        card.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+    });
+
+    // Hide cluster groups where all cards are hidden
+    groups.forEach(group => {
+        const visibleCards = group.querySelectorAll('.item-card:not([style*="display: none"])');
+        group.style.display = visibleCards.length ? '' : 'none';
+    });
+
+    document.getElementById('filter-count').textContent = `${visibleCount} of ${cards.length} items`;
+}
+</script>
 {% endblock %}

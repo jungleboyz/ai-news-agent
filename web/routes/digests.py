@@ -1,7 +1,8 @@
 """Digest list and detail view routes."""
+from collections import OrderedDict
 from datetime import date
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -12,18 +13,9 @@ router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
-async def homepage(request: Request, db: Session = Depends(get_db)):
-    """Homepage showing the 5 most recent digests."""
-    digests = (
-        db.query(Digest)
-        .order_by(desc(Digest.date))
-        .limit(5)
-        .all()
-    )
-    return request.app.state.templates.TemplateResponse(
-        "index.html",
-        {"request": request, "digests": digests}
-    )
+async def homepage(request: Request):
+    """Homepage redirects to the Daily Brief."""
+    return RedirectResponse(url="/brief", status_code=302)
 
 
 @router.get("/digests", response_class=HTMLResponse)
@@ -96,12 +88,28 @@ async def digest_detail(
         .first()
     )
 
+    # Group items by cluster label (preserving position order within each)
+    clustered_items = OrderedDict()
+    unclustered = []
+    for item in items:
+        label = item.cluster_label
+        if label:
+            clustered_items.setdefault(label, []).append(item)
+        else:
+            unclustered.append(item)
+
+    # If no clusters exist, fall back to flat list
+    has_clusters = bool(clustered_items)
+    if unclustered:
+        clustered_items["Other Stories"] = unclustered
+
     return request.app.state.templates.TemplateResponse(
         "digest.html",
         {
             "request": request,
             "digest": digest,
             "items": items,
+            "clustered_items": clustered_items if has_clusters else {},
             "prev_digest": prev_digest,
             "next_digest": next_digest
         }

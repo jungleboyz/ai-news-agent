@@ -461,6 +461,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     overflow: hidden;
 }
 
+.line-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 /* Smooth transitions */
 a, button {
     transition: all 0.2s ease;
