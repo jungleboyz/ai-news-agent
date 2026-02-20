@@ -227,11 +227,14 @@ class EmbeddingService:
                 print(f"Unknown embedding provider: {name}, skipping")
                 continue
             if name == "openai":
-                self._providers.append(cls(api_key=api_key or settings.openai_api_key))
+                provider = cls(api_key=api_key or settings.openai_api_key)
             elif name == "jina":
-                self._providers.append(cls(api_key=settings.jina_api_key))
+                jina_key = settings.jina_api_key or os.getenv("JINA_API_KEY")
+                provider = cls(api_key=jina_key)
             else:
-                self._providers.append(cls())
+                provider = cls()
+            self._providers.append(provider)
+            print(f"Embedding provider {name}: available={provider.available}")
 
         if not self._providers:
             raise RuntimeError("No embedding providers configured")
