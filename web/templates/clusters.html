@@ -29,7 +29,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {% for cluster_data in clusters %}
         {% set cluster = cluster_data.cluster %}
-        {% set items = cluster_data.items %}
+        {% set items = cluster_data.preview_items %}
         <div class="rounded-xl p-6 border border-slate-800 bg-slate-900/70 hover:border-slate-700 transition-all group">
             <div class="flex items-start justify-between mb-4">
                 <h2 class="text-lg font-semibold text-slate-50 group-hover:text-emerald-400 transition-colors">{{ cluster.label }}</h2>

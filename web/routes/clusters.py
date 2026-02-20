@@ -58,7 +58,7 @@ async def topics_page(
         )
         clusters_with_items.append({
             "cluster": cluster,
-            "items": items,
+            "preview_items": items,
             "digest_date": cluster.digest.date if cluster.digest else None,
         })
 
