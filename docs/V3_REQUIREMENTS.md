@@ -138,42 +138,58 @@ An intelligent, self-improving AI news platform that learns your preferences, di
 
 ## Implementation Phases
 
-### Phase 1: Embeddings & Semantic Search
-- Add vector database
-- Generate embeddings for all content
-- Replace keyword scoring with semantic similarity
-- Add semantic search to web UI
+### Phase 1: Embeddings & Semantic Search ✅
+- [x] Add vector database (ChromaDB)
+- [x] Generate embeddings for all content (OpenAI text-embedding-3-small)
+- [x] Replace keyword scoring with semantic similarity (with keyword fallback)
+- [x] Add semantic search to web UI
+- [x] Batch embedding generation for efficiency
+- [x] Embedding-based deduplication
 
-### Phase 2: Topic Clustering
-- Implement clustering algorithm (HDBSCAN or k-means)
-- AI-generated cluster names
-- Cross-source synthesis summaries
-- Topic view in dashboard
+### Phase 2: Topic Clustering ✅
+- [x] Implement clustering algorithm (scikit-learn)
+- [x] AI-generated cluster names (Anthropic Claude)
+- [x] Cross-source synthesis summaries
+- [x] Topic view in dashboard
 
-### Phase 3: Personalization
-- Interaction tracking
-- User preference model
-- Adaptive scoring
-- Preference presets UI
+### Phase 3: Personalization ✅
+- [x] Interaction tracking (click, save, skip, hide)
+- [x] User preference model (cookie-based profiles)
+- [x] Adaptive scoring (preference embeddings)
+- [x] Preference presets UI
 
-### Phase 4: Source Discovery
-- Community monitoring scrapers
-- Source quality evaluation
-- Auto-suggestion system
-- Source health dashboard
+### Phase 4: Source Discovery ✅
+- [x] Community monitoring scrapers (HackerNews, Reddit)
+- [x] Source quality evaluation (quality_score 0-100)
+- [x] Auto-suggestion system (discovered sources)
+- [x] Source health dashboard
 
-### Phase 5: Daily Brief & Chat
-- Executive summary generation
-- Multi-channel delivery
-- RAG pipeline for chat
-- Chat UI implementation
+### Phase 4b: Sources Manager ✅ (2026-02-20)
+- [x] `FeedSource` model — database-driven feed management
+- [x] CRUD API endpoints (list, create, update, delete, test, import)
+- [x] Feed validation service (`services/feed_validator.py`)
+- [x] Type-separated UI tabs: News (290) | Podcasts (56) | Videos (87) | Discovery
+- [x] Auto-import from .txt files on first startup (396 feeds seeded)
+- [x] Agent source loading from DB with .txt fallback (backwards compatible)
+- [x] Post-run status updates (last_fetched, error flagging)
+- [x] Add/remove/toggle/test feeds from UI — no backend access needed
 
-### Phase 6: UI Redesign (Manga Theme)
-- Design system and component library
-- Cyberpunk/manga color palette and typography
-- Custom illustrations and mascot character
-- Animated micro-interactions
-- Responsive mobile-first layouts
+### Phase 5: Daily Brief & Chat ✅
+- [x] Executive summary generation (AI-written brief)
+- [x] Multi-channel delivery (email via EmailSubscriber)
+- [x] RAG pipeline for chat (chat_rag.py)
+- [x] Chat UI implementation
+
+### Phase 6: UI Redesign (Cyberpunk Theme) ✅
+- [x] Design system and component library (Tailwind + custom CSS)
+- [x] Cyberpunk color palette and typography (Orbitron + Rajdhani, neon accents)
+- [x] Custom AI mascot (SVG robot in nav)
+- [x] Animated micro-interactions (hover glows, pulse effects)
+- [x] Responsive mobile-first layouts
+- [x] Dark mode first (cyber-dark backgrounds)
+- [x] HTMX for partial updates
+- [x] Toast notification system
+- [x] Keyboard shortcuts (j/k navigation, / search)
 
 ---
 
@@ -195,4 +211,7 @@ An intelligent, self-improving AI news platform that learns your preferences, di
 |---------|------|-------------|
 | V1 | 2026-01 | Core news agent, web interface, SQLite |
 | V2 | 2026-02 | Podcasts, videos, transcription, Claude summaries |
-| V3 | TBD | Semantic AI, clustering, personalization, chat |
+| V3 | 2026-02 | Semantic AI, clustering, personalization, chat, cyberpunk UI |
+| V3.1 | 2026-02-09 | UX polish: active nav, toast notifications, keyboard shortcuts |
+| V3.2 | 2026-02-14 | Video agent, YouTube feeds, transcript extraction |
+| V3.3 | 2026-02-20 | Sources Manager: DB-driven CRUD, type-separated tabs, auto-import |
