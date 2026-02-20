@@ -278,6 +278,8 @@ async def import_feeds(db: Session = Depends(get_db)):
 
 def import_feeds_from_files(db: Session) -> int:
     """Parse .txt files and insert FeedSource rows. Skip duplicates. Returns count imported."""
+    from sqlalchemy.exc import IntegrityError
+
     file_map = {
         "sources.txt": "news",
         "podcasts.txt": "podcast",
@@ -286,6 +288,11 @@ def import_feeds_from_files(db: Session) -> int:
 
     # Find project root (where .txt files live)
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    # Collect all existing URLs upfront
+    existing_urls = set(
+        row[0] for row in db.query(FeedSource.feed_url).all()
+    )
 
     imported = 0
     seen_urls = set()
@@ -302,13 +309,9 @@ def import_feeds_from_files(db: Session) -> int:
             ]
 
         for url in urls:
-            if url in seen_urls:
+            if url in seen_urls or url in existing_urls:
                 continue
             seen_urls.add(url)
-
-            existing = db.query(FeedSource).filter(FeedSource.feed_url == url).first()
-            if existing:
-                continue
 
             name = FeedValidator.name_from_url(url)
             feed = FeedSource(
@@ -320,11 +323,45 @@ def import_feeds_from_files(db: Session) -> int:
             db.add(feed)
             imported += 1
 
-        # Flush after each file so cross-file duplicate checks work
-        db.flush()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Fall back to one-by-one inserts
+        imported = 0
+        for url, source_type in [(u, t) for u, t in
+            [(u, t) for t_urls, t in _collect_urls(project_root, file_map) for u in t_urls]
+            if u not in existing_urls]:
+            try:
+                feed = FeedSource(
+                    name=FeedValidator.name_from_url(url),
+                    feed_url=url,
+                    source_type=source_type,
+                    status="active",
+                )
+                db.add(feed)
+                db.commit()
+                imported += 1
+            except IntegrityError:
+                db.rollback()
 
-    db.commit()
     return imported
+
+
+def _collect_urls(project_root: str, file_map: dict) -> list:
+    """Helper to collect (urls_list, source_type) pairs from .txt files."""
+    results = []
+    for filename, source_type in file_map.items():
+        filepath = os.path.join(project_root, filename)
+        if not os.path.exists(filepath):
+            continue
+        with open(filepath, "r", encoding="utf-8") as f:
+            urls = [
+                line.strip() for line in f
+                if line.strip() and not line.strip().startswith("#")
+            ]
+        results.append((urls, source_type))
+    return results
 
 
 # ---- Existing Source Quality / Discovery Endpoints ----
