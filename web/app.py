@@ -40,11 +40,26 @@ limiter = Limiter(key_func=get_real_ip)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
-    print("Startup: initializing database...")
-    init_db()
-    print("Startup: importing feeds...")
-    _auto_import_feeds()
-    print("Startup: ready")
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _init():
+        print("Startup: initializing database...")
+        init_db()
+        print("Startup: importing feeds...")
+        _auto_import_feeds()
+        print("Startup: ready")
+
+    try:
+        loop = asyncio.get_event_loop()
+        await asyncio.wait_for(
+            loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _init),
+            timeout=20,
+        )
+    except asyncio.TimeoutError:
+        print("Startup warning: DB init timed out after 20s — app will start anyway")
+    except Exception as e:
+        print(f"Startup warning: {e} — app will start anyway")
     yield
 
 
