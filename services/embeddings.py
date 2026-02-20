@@ -234,7 +234,6 @@ class EmbeddingService:
             else:
                 provider = cls()
             self._providers.append(provider)
-            print(f"Embedding provider {name}: available={provider.available}")
 
         if not self._providers:
             raise RuntimeError("No embedding providers configured")
@@ -288,10 +287,8 @@ class EmbeddingService:
             return []
 
         last_error = None
-        print(f"Cascade: {len(self._providers)} providers configured: {[p.name for p in self._providers]}")
         for provider in self._providers:
             if not provider.available:
-                print(f"Embedding provider {provider.name} not available, skipping")
                 continue
             try:
                 result = provider.batch_embed(texts, batch_size=batch_size)

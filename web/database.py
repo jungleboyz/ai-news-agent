@@ -70,14 +70,10 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
 
-    # Add brief cache columns to digests table (safe if already exist)
-    for col, col_type in [("brief_json", "TEXT"), ("brief_generated_at", "TIMESTAMP")]:
-        try:
-            with engine.connect() as conn:
-                conn.execute(text(f"ALTER TABLE digests ADD COLUMN {col} {col_type}"))
-                conn.commit()
-        except Exception:
-            pass  # Column already exists
+    # Brief cache columns (brief_json, brief_generated_at) are defined in the
+    # Digest model and created by create_all() for new DBs. For existing DBs,
+    # run manually: ALTER TABLE digests ADD COLUMN brief_json TEXT;
+    #               ALTER TABLE digests ADD COLUMN brief_generated_at TIMESTAMP;
 
     # Create FTS virtual table for SQLite only
     if is_sqlite():
