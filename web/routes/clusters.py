@@ -245,18 +245,75 @@ async def api_digest_clusters(
 
 @router.post("/api/clusters/rebuild")
 async def api_rebuild_clusters(
-    db: Session = Depends(get_db),
     days: Optional[int] = Query(None, ge=1, description="Days to look back. Omit for all digests."),
 ):
-    """Rebuild topic clusters for digests (generates missing embeddings). Omit days for all."""
-    from tasks.clustering_tasks import recluster_recent_digests
-    results = recluster_recent_digests(days=days)
-    total_clusters = sum(r.get("clusters_created", 0) for r in results if "error" not in r)
+    """Rebuild topic clusters for digests (non-blocking). Omit days for all."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _run():
+        from tasks.clustering_tasks import recluster_recent_digests
+        results = recluster_recent_digests(days=days)
+        total = sum(r.get("clusters_created", 0) for r in results if "error" not in r)
+        print(f"🏷️ Cluster rebuild complete: {total} clusters across {len(results)} digests")
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
+
+    return {"status": "started", "days": days or "all"}
+
+
+@router.get("/api/digests/audit")
+async def api_digest_audit(
+    db: Session = Depends(get_db),
+):
+    """Audit all digests — show item counts and identify empty ones."""
+    digests = db.query(Digest).order_by(Digest.date.desc()).all()
+
+    results = []
+    empty_ids = []
+    for d in digests:
+        item_count = db.query(func.count(Item.id)).filter(Item.digest_id == d.id).scalar()
+        cluster_count = db.query(func.count(TopicCluster.id)).filter(TopicCluster.digest_id == d.id).scalar()
+        entry = {
+            "id": d.id,
+            "date": d.date.isoformat() if d.date else None,
+            "item_count": item_count,
+            "cluster_count": cluster_count,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        results.append(entry)
+        if item_count == 0:
+            empty_ids.append(d.id)
+
     return {
-        "success": True,
-        "digests_processed": len(results),
-        "total_clusters_created": total_clusters,
-        "results": results,
+        "total_digests": len(digests),
+        "empty_digests": len(empty_ids),
+        "empty_digest_ids": empty_ids,
+        "digests": results,
+    }
+
+
+@router.delete("/api/digests/empty")
+async def api_delete_empty_digests(
+    db: Session = Depends(get_db),
+):
+    """Delete all digests that have zero items."""
+    empty_digests = []
+    digests = db.query(Digest).all()
+
+    for d in digests:
+        item_count = db.query(func.count(Item.id)).filter(Item.digest_id == d.id).scalar()
+        if item_count == 0:
+            # Also delete any orphan clusters
+            db.query(TopicCluster).filter(TopicCluster.digest_id == d.id).delete()
+            empty_digests.append({"id": d.id, "date": d.date.isoformat() if d.date else None})
+            db.delete(d)
+
+    db.commit()
+    return {
+        "deleted": len(empty_digests),
+        "digests": empty_digests,
     }
 
 
