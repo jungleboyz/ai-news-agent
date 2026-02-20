@@ -71,13 +71,13 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
     # Add brief cache columns to digests table (safe if already exist)
-    with engine.connect() as conn:
-        for col, col_type in [("brief_json", "TEXT"), ("brief_generated_at", "TIMESTAMP")]:
-            try:
+    for col, col_type in [("brief_json", "TEXT"), ("brief_generated_at", "TIMESTAMP")]:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(f"ALTER TABLE digests ADD COLUMN {col} {col_type}"))
                 conn.commit()
-            except Exception:
-                pass  # Column already exists
+        except Exception:
+            pass  # Column already exists
 
     # Create FTS virtual table for SQLite only
     if is_sqlite():
