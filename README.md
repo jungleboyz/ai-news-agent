@@ -20,6 +20,8 @@ What started as a simple RSS reader evolved into a full AI news intelligence pla
 
 **V3.3** (Feb 2026) made source management fully self-service. All 400+ feeds are now database-driven with a CRUD UI — add, remove, test, and monitor feeds without touching the backend.
 
+**V3.4** (Feb 2026) added smart caching for AI-generated content. Daily briefs are now generated once and stored in the database — eliminating redundant Claude API calls on every page load. A force-regenerate endpoint allows manual cache refresh when needed.
+
 ---
 
 ## What It Does
@@ -43,6 +45,8 @@ What started as a simple RSS reader evolved into a full AI news intelligence pla
 
 ### Daily Brief
 - AI-written executive summary of the day's key themes
+- **Database-cached briefs** — generated once per digest, served instantly on subsequent loads
+- Force-regenerate via `POST /api/brief/regenerate` when needed
 - Top stories curated by relevance score
 - Emerging trends and signals section
 - Email delivery to subscribers
@@ -189,6 +193,8 @@ python agent.py
 **For teams:** Shared intelligence platform. Everyone sees the same curated feed. Source quality scoring surfaces signal and buries noise. Topic clustering shows the full picture across sources.
 
 **For the curious:** Ask questions about recent news via chat. Get answers with citations. Follow emerging trends before they go mainstream.
+
+**Cost-efficient by design:** AI-generated content (article summaries, cluster labels, daily briefs) is cached in the database at generation time — not regenerated on every page view. This keeps API costs predictable and page loads fast.
 
 ---
 
