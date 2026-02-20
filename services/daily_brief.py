@@ -1,9 +1,13 @@
 """Daily brief and executive summary generation service."""
+import json
+import logging
 import os
 from datetime import date, datetime
 from typing import Optional
 
 from anthropic import Anthropic
+
+logger = logging.getLogger(__name__)
 
 
 class DailyBriefService:
@@ -122,7 +126,6 @@ Return ONLY valid JSON, no markdown formatting."""
             )
 
             # Parse response
-            import json
             content = response.content[0].text
 
             # Clean up potential markdown formatting
@@ -146,6 +149,40 @@ Return ONLY valid JSON, no markdown formatting."""
                 "emerging_trends": [],
                 "full_summary": f"Failed to generate summary: {str(e)}",
             }
+
+    def get_or_generate_summary(
+        self,
+        db,
+        digest_date: Optional[date] = None,
+        force_refresh: bool = False,
+    ) -> dict:
+        """Return cached brief from DB, or generate and cache it."""
+        from web.models import Digest
+
+        # Resolve date
+        if not digest_date:
+            latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
+            digest_date = latest_digest.date if latest_digest else date.today()
+
+        digest = db.query(Digest).filter(Digest.date == digest_date).first()
+
+        # Try cache first
+        if not force_refresh and digest and digest.brief_json:
+            logger.info("Using cached brief for %s", digest_date)
+            return json.loads(digest.brief_json)
+
+        # Generate fresh summary
+        logger.info("Generating new brief for %s", digest_date)
+        summary = self.generate_executive_summary(db, digest_date)
+
+        # Cache it if we have a digest row and no error
+        if digest and "error" not in summary:
+            digest.brief_json = json.dumps(summary)
+            digest.brief_generated_at = datetime.utcnow()
+            db.commit()
+            logger.info("Cached brief for %s", digest_date)
+
+        return summary
 
     def generate_brief_html(self, summary: dict, digest_date: date) -> str:
         """Generate HTML version of the brief for email/web."""

@@ -17,6 +17,8 @@ class Digest(Base):
     total_items_considered = Column(Integer, default=0)
     md_path = Column(Text)
     html_path = Column(Text)
+    brief_json = Column(Text, nullable=True)  # Cached AI-generated executive summary (JSON)
+    brief_generated_at = Column(DateTime, nullable=True)
 
     # Relationship to items
     items = relationship("Item", back_populates="digest", cascade="all, delete-orphan")

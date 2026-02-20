@@ -35,7 +35,7 @@ async def homepage(
         latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
         target_date = latest_digest.date if latest_digest else date.today()
 
-    summary = service.generate_executive_summary(db, target_date)
+    summary = service.get_or_generate_summary(db, target_date)
 
     digests = db.query(Digest).order_by(Digest.date.desc()).limit(14).all()
     available_dates = [d.date for d in digests]

@@ -64,8 +64,8 @@ async def brief_page(
         latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
         target_date = latest_digest.date if latest_digest else date.today()
 
-    # Generate summary
-    summary = service.generate_executive_summary(db, target_date)
+    # Generate summary (cached)
+    summary = service.get_or_generate_summary(db, target_date)
 
     # Get available dates
     digests = db.query(Digest).order_by(Digest.date.desc()).limit(14).all()
@@ -98,7 +98,7 @@ async def get_brief(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format")
 
-    summary = service.generate_executive_summary(db, target_date)
+    summary = service.get_or_generate_summary(db, target_date)
     return summary
 
 
@@ -121,10 +121,29 @@ async def get_brief_html(
         latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
         target_date = latest_digest.date if latest_digest else date.today()
 
-    summary = service.generate_executive_summary(db, target_date)
+    summary = service.get_or_generate_summary(db, target_date)
     html = service.generate_brief_html(summary, target_date)
 
     return Response(content=html, media_type="text/html")
+
+
+@router.post("/api/brief/regenerate")
+async def regenerate_brief(
+    digest_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Force-regenerate the daily brief, bypassing cache."""
+    service = DailyBriefService()
+
+    target_date = None
+    if digest_date:
+        try:
+            target_date = date.fromisoformat(digest_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
+
+    summary = service.get_or_generate_summary(db, target_date, force_refresh=True)
+    return summary
 
 
 # Chat Routes
