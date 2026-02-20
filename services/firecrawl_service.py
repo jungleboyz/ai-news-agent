@@ -87,12 +87,25 @@ class FirecrawlService:
         try:
             search_data = self._client.search(query, limit=limit)
             results = []
-            for item in search_data.web or []:
-                results.append({
-                    "url": getattr(item, "url", ""),
-                    "title": getattr(item, "title", ""),
-                    "markdown": (getattr(item, "markdown", "") or "")[:MAX_CONTENT_LENGTH],
-                })
+            # Handle both list and object responses across SDK versions
+            items = search_data
+            if hasattr(search_data, "data"):
+                items = search_data.data or []
+            elif hasattr(search_data, "web"):
+                items = search_data.web or []
+            elif not isinstance(search_data, list):
+                items = []
+            for item in items:
+                if isinstance(item, dict):
+                    url = item.get("url", "")
+                    title = item.get("title", "")
+                    markdown = (item.get("markdown", "") or "")[:MAX_CONTENT_LENGTH]
+                else:
+                    url = getattr(item, "url", "")
+                    title = getattr(item, "title", "")
+                    markdown = (getattr(item, "markdown", "") or "")[:MAX_CONTENT_LENGTH]
+                if url:
+                    results.append({"url": url, "title": title, "markdown": markdown})
             return results
         except Exception as e:
             print(f"  ⚠ Firecrawl search failed for '{query}': {e}")
