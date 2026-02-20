@@ -40,8 +40,8 @@ class FirecrawlService:
         if not self._client:
             return None
         try:
-            result = self._client.scrape_url(url, params={"formats": ["markdown"]})
-            markdown = result.get("markdown", "")
+            doc = self._client.scrape(url, formats=["markdown"])
+            markdown = doc.markdown or ""
             if markdown:
                 return markdown[:MAX_CONTENT_LENGTH]
             return None
@@ -59,12 +59,14 @@ class FirecrawlService:
 
         results = {}
         try:
-            response = self._client.batch_scrape_urls(urls, params={"formats": ["markdown"]})
-            for item in response.get("data", []):
-                item_url = item.get("metadata", {}).get("sourceURL", "")
-                markdown = item.get("markdown", "")
-                if item_url and markdown:
-                    results[item_url] = markdown[:MAX_CONTENT_LENGTH]
+            docs = self._client.batch_scrape(urls, formats=["markdown"])
+            for doc in docs:
+                source_url = ""
+                if doc.metadata:
+                    source_url = doc.metadata.get("sourceURL", "") or doc.metadata.get("url", "")
+                markdown = doc.markdown or ""
+                if source_url and markdown:
+                    results[source_url] = markdown[:MAX_CONTENT_LENGTH]
         except Exception as e:
             print(f"  ⚠ Firecrawl batch scrape failed: {e}")
             # Fall back to individual scrapes
@@ -83,13 +85,13 @@ class FirecrawlService:
         if not self._client:
             return []
         try:
-            response = self._client.search(query, params={"limit": limit})
+            search_data = self._client.search(query, limit=limit)
             results = []
-            for item in response.get("data", []):
+            for item in search_data.web or []:
                 results.append({
-                    "url": item.get("url", ""),
-                    "title": item.get("title", ""),
-                    "markdown": (item.get("markdown", "") or "")[:MAX_CONTENT_LENGTH],
+                    "url": getattr(item, "url", ""),
+                    "title": getattr(item, "title", ""),
+                    "markdown": (getattr(item, "markdown", "") or "")[:MAX_CONTENT_LENGTH],
                 })
             return results
         except Exception as e:
