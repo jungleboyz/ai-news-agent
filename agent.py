@@ -416,8 +416,13 @@ def run_agent() -> str:
         for it in all_items:
             it["score"] = score_item(it["title"], it.get("summary", ""))
     
-    # Remove already-seen items
-    fresh = [it for it in all_items if it["id"] not in seen]
+    # Remove already-seen items and deduplicate within batch by ID
+    seen_ids = set()
+    fresh = []
+    for it in all_items:
+        if it["id"] not in seen and it["id"] not in seen_ids:
+            seen_ids.add(it["id"])
+            fresh.append(it)
     print(f"🆕 Fresh news items: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
 
     # Check for semantic duplicates
@@ -537,6 +542,17 @@ def run_agent() -> str:
             "summary": article.get("summary", ""),
             "show_name": None
         })
+
+    # Deduplicate by link across all item types (news, podcast, video, web)
+    seen_links = set()
+    deduped_items = []
+    for item in all_digest_items:
+        if item["link"] not in seen_links:
+            seen_links.add(item["link"])
+            deduped_items.append(item)
+    if len(deduped_items) < len(all_digest_items):
+        print(f"🔄 Removed {len(all_digest_items) - len(deduped_items)} cross-source duplicates")
+    all_digest_items = deduped_items
 
     # Sort all items by score (descending)
     all_digest_items.sort(key=lambda x: x["score"], reverse=True)

@@ -117,7 +117,6 @@ https://nicholas.carlini.com/writing/feed.xml
 https://developer.nvidia.com/blog/feed
 https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml
 https://www.oneusefulthing.org/feed
-https://openai.com/blog/rss/
 https://blog.paperspace.com/rss/
 https://petapixel.com/feed
 https://www.philschmid.de/feed.xml
