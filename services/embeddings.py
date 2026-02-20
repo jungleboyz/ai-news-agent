@@ -1,54 +1,79 @@
-"""OpenAI embedding service with retry logic."""
+"""Embedding service with cascading provider support (OpenAI → Jina)."""
 
 import os
+from abc import ABC, abstractmethod
 from typing import Optional
 
+import requests
 import tiktoken
 from openai import OpenAI, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Constants
-MODEL = "text-embedding-3-small"
-DIMENSIONS = 1536
-MAX_TOKENS = 8191  # Model limit for text-embedding-3-small
+OPENAI_MODEL = "text-embedding-3-small"
+OPENAI_DIMENSIONS = 1536
+OPENAI_MAX_TOKENS = 8191
+
+JINA_MODEL = "jina-embeddings-v3"
+JINA_DIMENSIONS = 1024
+JINA_ENDPOINT = "https://api.jina.ai/v1/embeddings"
 
 
-class EmbeddingService:
-    """Service for generating embeddings using OpenAI's text-embedding-3-small model."""
+class EmbeddingProvider(ABC):
+    """Base class for embedding providers."""
+
+    name: str
+    dimensions: int
+
+    @property
+    @abstractmethod
+    def available(self) -> bool:
+        """Whether this provider has the required configuration."""
+        ...
+
+    @abstractmethod
+    def get_embedding(self, text: str) -> list[float]:
+        """Generate embedding for a single text."""
+        ...
+
+    @abstractmethod
+    def batch_embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts."""
+        ...
+
+
+class OpenAIProvider(EmbeddingProvider):
+    """OpenAI text-embedding-3-small provider."""
+
+    name = "openai"
+    dimensions = OPENAI_DIMENSIONS
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize the embedding service.
-
-        Args:
-            api_key: OpenAI API key. If not provided, uses OPENAI_API_KEY env var.
-        """
-        self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
-        self.model = MODEL
-        self.dimensions = DIMENSIONS
+        self._api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self._client = None
         self._tokenizer = None
 
     @property
+    def available(self) -> bool:
+        return bool(self._api_key)
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = OpenAI(api_key=self._api_key)
+        return self._client
+
+    @property
     def tokenizer(self):
-        """Lazy-load the tokenizer."""
         if self._tokenizer is None:
-            self._tokenizer = tiktoken.encoding_for_model(self.model)
+            self._tokenizer = tiktoken.encoding_for_model(OPENAI_MODEL)
         return self._tokenizer
 
-    def truncate_text(self, text: str, max_tokens: int = MAX_TOKENS) -> str:
-        """Truncate text to fit within token limit.
-
-        Args:
-            text: Text to truncate.
-            max_tokens: Maximum number of tokens allowed.
-
-        Returns:
-            Truncated text that fits within token limit.
-        """
+    def truncate_text(self, text: str, max_tokens: int = OPENAI_MAX_TOKENS) -> str:
         tokens = self.tokenizer.encode(text)
         if len(tokens) <= max_tokens:
             return text
-        truncated_tokens = tokens[:max_tokens]
-        return self.tokenizer.decode(truncated_tokens)
+        return self.tokenizer.decode(tokens[:max_tokens])
 
     @retry(
         stop=stop_after_attempt(3),
@@ -57,45 +82,23 @@ class EmbeddingService:
         reraise=True,
     )
     def get_embedding(self, text: str) -> list[float]:
-        """Generate embedding for a single text.
-
-        Args:
-            text: Text to embed.
-
-        Returns:
-            List of floats representing the embedding vector.
-        """
         if not text or not text.strip():
             raise ValueError("Cannot embed empty text")
-
-        # Truncate if needed
         text = self.truncate_text(text.strip())
-
-        response = self.client.embeddings.create(
-            model=self.model,
-            input=text,
-            dimensions=self.dimensions,
-        )
-        return response.data[0].embedding
+        try:
+            response = self.client.embeddings.create(
+                model=OPENAI_MODEL,
+                input=text,
+                dimensions=OPENAI_DIMENSIONS,
+            )
+            return response.data[0].embedding
+        except RateLimitError:
+            raise
 
     def batch_embed(self, texts: list[str], batch_size: int = 2048) -> list[list[float]]:
-        """Generate embeddings for multiple texts in batches.
-
-        Args:
-            texts: List of texts to embed.
-            batch_size: Number of texts per API call (max 2048).
-
-        Returns:
-            List of embedding vectors, one per input text.
-
-        Raises:
-            RateLimitError: If API quota/rate limit is exceeded (fails fast, no retry).
-            Exception: Other API errors after 3 retry attempts.
-        """
         if not texts:
             return []
 
-        # Truncate and filter empty texts
         processed_texts = []
         valid_indices = []
         for i, text in enumerate(texts):
@@ -107,23 +110,14 @@ class EmbeddingService:
             return [[] for _ in texts]
 
         all_embeddings = []
-
-        # Process in batches
         for i in range(0, len(processed_texts), batch_size):
             batch = processed_texts[i:i + batch_size]
-            try:
-                response = self._call_embedding_api(batch)
-                batch_embeddings = [item.embedding for item in response.data]
-                all_embeddings.extend(batch_embeddings)
-            except RateLimitError:
-                # Fail fast on rate limit/quota - no point retrying
-                raise
+            response = self._call_api(batch)
+            all_embeddings.extend([item.embedding for item in response.data])
 
-        # Map back to original indices, filling in empty lists for invalid texts
         result = [[] for _ in texts]
         for idx, embedding in zip(valid_indices, all_embeddings):
             result[idx] = embedding
-
         return result
 
     @retry(
@@ -132,28 +126,174 @@ class EmbeddingService:
         retry=retry_if_exception_type((Exception,)),
         reraise=True,
     )
-    def _call_embedding_api(self, texts: list[str]):
-        """Call the embedding API with retry logic for transient errors.
-
-        RateLimitError is not retried as quota issues won't resolve with retries.
-        """
+    def _call_api(self, texts: list[str]):
         try:
             return self.client.embeddings.create(
-                model=self.model,
+                model=OPENAI_MODEL,
                 input=texts,
-                dimensions=self.dimensions,
+                dimensions=OPENAI_DIMENSIONS,
             )
         except RateLimitError:
-            # Don't retry rate limit errors - they won't succeed
             raise
 
     def count_tokens(self, text: str) -> int:
-        """Count the number of tokens in a text.
-
-        Args:
-            text: Text to count tokens for.
-
-        Returns:
-            Number of tokens.
-        """
         return len(self.tokenizer.encode(text))
+
+
+class JinaProvider(EmbeddingProvider):
+    """Jina AI embedding provider (free tier, OpenAI-compatible API)."""
+
+    name = "jina"
+    dimensions = JINA_DIMENSIONS
+
+    def __init__(self, api_key: Optional[str] = None):
+        self._api_key = api_key or os.getenv("JINA_API_KEY")
+
+    @property
+    def available(self) -> bool:
+        return bool(self._api_key)
+
+    def _call_api(self, texts: list[str]) -> list[list[float]]:
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": JINA_MODEL,
+            "input": texts,
+            "dimensions": JINA_DIMENSIONS,
+        }
+        resp = requests.post(JINA_ENDPOINT, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        sorted_data = sorted(data["data"], key=lambda x: x["index"])
+        return [item["embedding"] for item in sorted_data]
+
+    def get_embedding(self, text: str) -> list[float]:
+        if not text or not text.strip():
+            raise ValueError("Cannot embed empty text")
+        embeddings = self._call_api([text.strip()])
+        return embeddings[0]
+
+    def batch_embed(self, texts: list[str], batch_size: int = 100) -> list[list[float]]:
+        if not texts:
+            return []
+
+        processed_texts = []
+        valid_indices = []
+        for i, text in enumerate(texts):
+            if text and text.strip():
+                processed_texts.append(text.strip())
+                valid_indices.append(i)
+
+        if not processed_texts:
+            return [[] for _ in texts]
+
+        all_embeddings = []
+        for i in range(0, len(processed_texts), batch_size):
+            batch = processed_texts[i:i + batch_size]
+            all_embeddings.extend(self._call_api(batch))
+
+        result = [[] for _ in texts]
+        for idx, embedding in zip(valid_indices, all_embeddings):
+            result[idx] = embedding
+        return result
+
+
+# Provider registry
+PROVIDER_CLASSES = {
+    "openai": OpenAIProvider,
+    "jina": JinaProvider,
+}
+
+
+class EmbeddingService:
+    """Service for generating embeddings with cascading provider fallback.
+
+    Tries providers in order (configurable via EMBEDDING_PROVIDERS env var).
+    Default cascade: OpenAI → Jina.
+    """
+
+    def __init__(self, api_key: Optional[str] = None):
+        from config import get_settings
+        settings = get_settings()
+
+        provider_names = [p.strip() for p in settings.embedding_providers.split(",") if p.strip()]
+
+        self._providers: list[EmbeddingProvider] = []
+        for name in provider_names:
+            cls = PROVIDER_CLASSES.get(name)
+            if cls is None:
+                print(f"Unknown embedding provider: {name}, skipping")
+                continue
+            if name == "openai":
+                self._providers.append(cls(api_key=api_key or settings.openai_api_key))
+            elif name == "jina":
+                self._providers.append(cls(api_key=settings.jina_api_key))
+            else:
+                self._providers.append(cls())
+
+        if not self._providers:
+            raise RuntimeError("No embedding providers configured")
+
+        # Expose dimensions from the first available provider
+        self.dimensions = self._providers[0].dimensions
+        self.model = OPENAI_MODEL  # Keep for backward compat
+
+        # Keep tokenizer access for callers that use count_tokens/truncate_text
+        self._openai_provider = next(
+            (p for p in self._providers if isinstance(p, OpenAIProvider)), None
+        )
+        self._tokenizer = None
+
+    @property
+    def tokenizer(self):
+        if self._tokenizer is None:
+            if self._openai_provider:
+                self._tokenizer = self._openai_provider.tokenizer
+            else:
+                self._tokenizer = tiktoken.encoding_for_model(OPENAI_MODEL)
+        return self._tokenizer
+
+    def truncate_text(self, text: str, max_tokens: int = OPENAI_MAX_TOKENS) -> str:
+        tokens = self.tokenizer.encode(text)
+        if len(tokens) <= max_tokens:
+            return text
+        return self.tokenizer.decode(tokens[:max_tokens])
+
+    def count_tokens(self, text: str) -> int:
+        return len(self.tokenizer.encode(text))
+
+    def get_embedding(self, text: str) -> list[float]:
+        """Generate embedding for a single text, cascading through providers."""
+        last_error = None
+        for provider in self._providers:
+            if not provider.available:
+                continue
+            try:
+                result = provider.get_embedding(text)
+                self.dimensions = provider.dimensions
+                return result
+            except Exception as e:
+                print(f"Embedding provider {provider.name} failed: {e}, trying next...")
+                last_error = e
+        raise RuntimeError(f"All embedding providers failed. Last error: {last_error}")
+
+    def batch_embed(self, texts: list[str], batch_size: int = 2048) -> list[list[float]]:
+        """Generate embeddings for multiple texts, cascading through providers."""
+        if not texts:
+            return []
+
+        last_error = None
+        for provider in self._providers:
+            if not provider.available:
+                continue
+            try:
+                result = provider.batch_embed(texts, batch_size=batch_size)
+                self.dimensions = provider.dimensions
+                print(f"Embeddings generated via {provider.name} ({len(texts)} texts)")
+                return result
+            except Exception as e:
+                print(f"Embedding provider {provider.name} failed: {e}, trying next...")
+                last_error = e
+        raise RuntimeError(f"All embedding providers failed. Last error: {last_error}")

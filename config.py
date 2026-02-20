@@ -21,6 +21,10 @@ class Settings:
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
     firecrawl_api_key: Optional[str] = os.getenv("FIRECRAWL_API_KEY")
+    jina_api_key: Optional[str] = os.getenv("JINA_API_KEY")
+
+    # Embedding Providers (comma-separated cascade order, e.g. "openai,jina" or "jina")
+    embedding_providers: str = os.getenv("EMBEDDING_PROVIDERS", "openai,jina")
 
     # Cron / Scheduler
     cron_secret: str = os.getenv("CRON_SECRET", "dev-cron-secret")
