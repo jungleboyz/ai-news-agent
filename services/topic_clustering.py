@@ -136,8 +136,8 @@ class TopicClusterer:
             return 0.0
 
         similarity = dot_product / (norm_a * norm_b)
-        # Clamp to 0-1 range
-        return max(0.0, min(1.0, (similarity + 1) / 2))
+        # Clamp to 0-1 range, cast to plain float for DB compatibility
+        return float(max(0.0, min(1.0, (similarity + 1) / 2)))
 
     def generate_cluster_label(self, items: list[dict]) -> str:
         """Generate a topic label using Claude.
