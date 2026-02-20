@@ -243,6 +243,23 @@ async def api_digest_clusters(
     }
 
 
+@router.post("/api/clusters/rebuild")
+async def api_rebuild_clusters(
+    db: Session = Depends(get_db),
+    days: int = Query(7, ge=1, le=30),
+):
+    """Rebuild topic clusters for recent digests (generates missing embeddings)."""
+    from tasks.clustering_tasks import recluster_recent_digests
+    results = recluster_recent_digests(days=days)
+    total_clusters = sum(r.get("clusters_created", 0) for r in results if "error" not in r)
+    return {
+        "success": True,
+        "digests_processed": len(results),
+        "total_clusters_created": total_clusters,
+        "results": results,
+    }
+
+
 @router.get("/api/clusters/stats")
 async def api_cluster_stats(
     db: Session = Depends(get_db),

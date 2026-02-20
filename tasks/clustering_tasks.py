@@ -6,7 +6,7 @@ from typing import Optional
 from services.topic_clustering import TopicClusterer
 from services.vector_store import VectorStore
 from services.embeddings import EmbeddingService
-from web.database import SessionLocal, DATABASE_PATH
+from web.database import SessionLocal
 from web.models import Item, TopicCluster, Digest
 
 # Service singletons
@@ -45,6 +45,9 @@ def get_clusterer() -> TopicClusterer:
 def cluster_digest(digest_id: int, n_clusters: Optional[int] = None) -> dict:
     """Cluster all items in a digest by topic.
 
+    Tries to retrieve embeddings from ChromaDB first, then generates fresh
+    embeddings for any items that are missing (e.g. after a container restart).
+
     Args:
         digest_id: Database ID of the digest to cluster.
         n_clusters: Number of clusters (auto-detected if None).
@@ -65,29 +68,58 @@ def cluster_digest(digest_id: int, n_clusters: Optional[int] = None) -> dict:
         if not items:
             return {"error": "No items found in digest"}
 
+        if len(items) < 3:
+            return {"error": f"Not enough items ({len(items)}), need at least 3"}
+
         print(f"  📊 Found {len(items)} items to cluster")
 
-        # Get embeddings from ChromaDB
+        # Phase 1: Try to get embeddings from ChromaDB
         vector_store = get_vector_store()
         embeddings = []
         items_with_embeddings = []
+        items_missing_embeddings = []
 
         for item in items:
+            found = False
             if item.embedding_id:
-                # Try to get embedding from ChromaDB
                 try:
                     result = vector_store.get_item(item.embedding_id, item.type)
                     if result and result.get("embedding"):
                         embeddings.append(result["embedding"])
                         items_with_embeddings.append(item)
+                        found = True
                 except Exception:
                     pass
+            if not found:
+                items_missing_embeddings.append(item)
+
+        chromadb_count = len(items_with_embeddings)
+        print(f"  📦 Retrieved {chromadb_count} embeddings from ChromaDB, {len(items_missing_embeddings)} missing")
+
+        # Phase 2: Generate fresh embeddings for items missing from ChromaDB
+        if items_missing_embeddings:
+            try:
+                embedding_service = get_embedding_service()
+                texts = [
+                    f"{item.title} {item.summary or ''}".strip()
+                    for item in items_missing_embeddings
+                ]
+                fresh_embeddings = embedding_service.batch_embed(texts)
+
+                generated = 0
+                for item, emb in zip(items_missing_embeddings, fresh_embeddings):
+                    if emb:
+                        embeddings.append(emb)
+                        items_with_embeddings.append(item)
+                        generated += 1
+
+                print(f"  🧠 Generated {generated} fresh embeddings")
+            except Exception as e:
+                print(f"  ⚠ Fresh embedding generation failed: {e}")
 
         if len(embeddings) < 3:
             print(f"  ⚠ Not enough embeddings ({len(embeddings)}), need at least 3")
             return {"error": "Not enough embeddings for clustering", "count": len(embeddings)}
-
-        print(f"  📦 Retrieved {len(embeddings)} embeddings from ChromaDB")
 
         # Convert items to dicts for clustering
         item_dicts = [
@@ -113,7 +145,6 @@ def cluster_digest(digest_id: int, n_clusters: Optional[int] = None) -> dict:
 
         # Store clusters in database
         for cluster in clusters:
-            # Create TopicCluster record
             topic_cluster = TopicCluster(
                 cluster_id=cluster["cluster_id"],
                 digest_id=digest_id,
