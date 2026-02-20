@@ -15,6 +15,10 @@
                 class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm">
                 Discover New
             </button>
+            <button onclick="checkDuplicates()" id="dupeBtn"
+                class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm">
+                Check Duplicates
+            </button>
             <button onclick="recalculateScores()" id="recalcBtn"
                 class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm">
                 Recalculate Scores
@@ -160,7 +164,11 @@ async function addFeed(sourceType) {
         });
         const data = await resp.json();
         if (resp.ok && data.success) {
-            showToast(`Added "${data.feed.name}"`, 'success');
+            if (data.warning) {
+                showToast(`Added "${data.feed.name}" - Warning: ${data.warning}`, 'warning');
+            } else {
+                showToast(`Added "${data.feed.name}"`, 'success');
+            }
             window.location.reload();
         } else {
             showToast(data.detail || 'Failed to add feed', 'error');
@@ -246,7 +254,9 @@ async function importFromFiles() {
         const resp = await fetch('/api/feeds/import', {method: 'POST'});
         const data = await resp.json();
         if (data.success) {
-            showToast(`Imported ${data.imported} feeds from .txt files`, 'success');
+            let msg = `Imported ${data.imported} feeds from .txt files`;
+            if (data.warning) msg += ` (${data.warning})`;
+            showToast(msg, data.warning ? 'warning' : 'success');
             if (data.imported > 0) window.location.reload();
         }
     } catch (e) {
@@ -318,12 +328,80 @@ async function rejectDiscovery(id) {
     }
 }
 
+async function checkDuplicates() {
+    const btn = document.getElementById('dupeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+
+    try {
+        const resp = await fetch('/api/feeds/duplicates');
+        const data = await resp.json();
+        if (data.duplicate_groups === 0) {
+            showToast('No duplicate feeds found', 'success');
+        } else {
+            // Show duplicate details in a modal-like overlay
+            let html = `<div id="dupeOverlay" class="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                <div class="bg-gray-900 rounded-xl border border-gray-700 max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold text-white">Duplicate Feeds (${data.duplicate_groups} groups)</h2>
+                        <button onclick="document.getElementById('dupeOverlay').remove()" class="text-slate-400 hover:text-white text-2xl">&times;</button>
+                    </div>`;
+            for (const group of data.duplicates) {
+                const badge = group.cross_type
+                    ? '<span class="text-xs bg-blue-600/30 text-blue-400 px-2 py-0.5 rounded ml-2">cross-type</span>'
+                    : '<span class="text-xs bg-amber-600/30 text-amber-400 px-2 py-0.5 rounded ml-2">same-type</span>';
+                html += `<div class="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                    <div class="font-medium text-white mb-2">${group.domain} (${group.count} feeds)${badge}</div>`;
+                for (const feed of group.feeds) {
+                    html += `<div class="text-sm text-slate-400 ml-2 mb-1">
+                        <span class="text-xs bg-slate-700 px-1.5 py-0.5 rounded mr-2">${feed.source_type}</span>
+                        <span class="text-slate-300">${feed.name}</span>
+                        <span class="text-slate-500 text-xs ml-1">${feed.status}</span>
+                    </div>`;
+                }
+                html += '</div>';
+            }
+            html += `<div class="flex justify-end gap-3 mt-4">
+                        <button onclick="document.getElementById('dupeOverlay').remove()" class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 text-sm">Close</button>
+                        <button onclick="autoDeduplicate()" id="autoDedupeBtn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">Auto-Remove Same-Type Duplicates</button>
+                    </div>
+                </div></div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+    } catch (e) {
+        showToast('Check failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Check Duplicates';
+    }
+}
+
+async function autoDeduplicate() {
+    const btn = document.getElementById('autoDedupeBtn');
+    if (!confirm('This will remove same-type duplicate feeds, keeping the best one per domain. Continue?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Removing...';
+
+    try {
+        const resp = await fetch('/api/feeds/deduplicate', {method: 'POST'});
+        const data = await resp.json();
+        showToast(data.message, 'success');
+        document.getElementById('dupeOverlay')?.remove();
+        if (data.removed > 0) window.location.reload();
+    } catch (e) {
+        showToast('Deduplication failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Auto-Remove Same-Type Duplicates';
+    }
+}
+
 // Fallback showToast if base template doesn't provide one
 if (typeof showToast === 'undefined') {
     function showToast(msg, type) {
         const toast = document.createElement('div');
         toast.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg text-sm z-50 transition-opacity duration-300 ${
-            type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+            type === 'error' ? 'bg-red-600 text-white' : type === 'warning' ? 'bg-amber-600 text-white' : 'bg-emerald-600 text-white'
         }`;
         toast.textContent = msg;
         document.body.appendChild(toast);

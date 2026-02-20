@@ -1,8 +1,10 @@
 """Source discovery and quality management routes."""
 import os
 import asyncio
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import datetime
+from urllib.parse import urlparse
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
@@ -184,6 +186,9 @@ async def create_feed(
             else:
                 name = FeedValidator.name_from_url(body.feed_url)
 
+    # Check for domain-level duplicates before adding
+    domain_matches = check_new_feed_duplicates(db, body.feed_url)
+
     feed = FeedSource(
         name=name,
         feed_url=body.feed_url,
@@ -194,7 +199,7 @@ async def create_feed(
     db.commit()
     db.refresh(feed)
 
-    return {
+    result = {
         "success": True,
         "feed": {
             "id": feed.id,
@@ -204,6 +209,12 @@ async def create_feed(
             "status": feed.status,
         },
     }
+
+    if domain_matches:
+        result["warning"] = f"This domain already has {len(domain_matches)} other feed(s)"
+        result["existing_feeds"] = domain_matches
+
+    return result
 
 
 @router.put("/api/feeds/{feed_id}")
@@ -282,7 +293,15 @@ async def test_feed(
 async def import_feeds(db: Session = Depends(get_db)):
     """Import feeds from .txt files (sources.txt, podcasts.txt, videos.txt)."""
     imported = import_feeds_from_files(db)
-    return {"success": True, "imported": imported}
+
+    # Check for duplicates after import
+    duplicates = find_duplicate_feeds(db)
+    result = {"success": True, "imported": imported}
+    if duplicates:
+        result["duplicate_groups"] = len(duplicates)
+        result["warning"] = f"Found {len(duplicates)} domain(s) with duplicate feeds after import"
+
+    return result
 
 
 def import_feeds_from_files(db: Session) -> int:
@@ -614,4 +633,134 @@ async def recalculate_scores(db: Session = Depends(get_db)):
     return {
         "success": True,
         "updated_count": updated,
+    }
+
+
+# ---- Duplicate Detection ----
+
+def _extract_domain(url: str) -> str:
+    """Extract normalized domain from a URL (strips www., feeds., rss. prefixes)."""
+    try:
+        parsed = urlparse(url)
+        domain = (parsed.hostname or "").lower()
+        for prefix in ("www.", "feeds.", "rss.", "blog.", "blogs."):
+            if domain.startswith(prefix):
+                domain = domain[len(prefix):]
+        return domain
+    except Exception:
+        return url.lower()
+
+
+def find_duplicate_feeds(db: Session) -> List[Dict]:
+    """Scan all feed sources for domain-level duplicates.
+
+    Groups feeds by normalized domain and returns groups with 2+ entries.
+    Each group includes the feeds and a suggested action.
+    """
+    all_feeds = db.query(FeedSource).order_by(FeedSource.source_type, FeedSource.name).all()
+
+    domain_groups = defaultdict(list)
+    for feed in all_feeds:
+        domain = _extract_domain(feed.feed_url)
+        domain_groups[domain].append(feed)
+
+    duplicates = []
+    for domain, feeds in sorted(domain_groups.items()):
+        if len(feeds) < 2:
+            continue
+
+        # Check if they're across different source types (often intentional)
+        types = set(f.source_type for f in feeds)
+        cross_type = len(types) > 1
+
+        duplicates.append({
+            "domain": domain,
+            "count": len(feeds),
+            "cross_type": cross_type,
+            "feeds": [
+                {
+                    "id": f.id,
+                    "name": f.name,
+                    "feed_url": f.feed_url,
+                    "source_type": f.source_type,
+                    "status": f.status,
+                }
+                for f in feeds
+            ],
+        })
+
+    return duplicates
+
+
+def check_new_feed_duplicates(db: Session, feed_url: str) -> List[Dict]:
+    """Check if a new feed URL overlaps with existing feeds by domain."""
+    new_domain = _extract_domain(feed_url)
+
+    existing = db.query(FeedSource).all()
+    matches = []
+    for feed in existing:
+        if _extract_domain(feed.feed_url) == new_domain and feed.feed_url != feed_url:
+            matches.append({
+                "id": feed.id,
+                "name": feed.name,
+                "feed_url": feed.feed_url,
+                "source_type": feed.source_type,
+                "status": feed.status,
+            })
+    return matches
+
+
+@router.get("/api/feeds/duplicates")
+async def get_duplicate_feeds(db: Session = Depends(get_db)):
+    """Scan all feeds for domain-level duplicates."""
+    duplicates = find_duplicate_feeds(db)
+    return {
+        "success": True,
+        "duplicate_groups": len(duplicates),
+        "total_duplicate_feeds": sum(d["count"] for d in duplicates),
+        "duplicates": duplicates,
+    }
+
+
+@router.post("/api/feeds/deduplicate")
+async def auto_deduplicate(db: Session = Depends(get_db)):
+    """Auto-resolve duplicate feeds within the same source type.
+
+    Keeps the feed with the most recent last_fetched or earliest created_at.
+    Cross-type duplicates (e.g. news RSS + web scrape of same domain) are skipped
+    since those are often intentional.
+    """
+    duplicates = find_duplicate_feeds(db)
+    removed = 0
+
+    for group in duplicates:
+        if group["cross_type"]:
+            continue  # Skip cross-type duplicates (intentional)
+
+        feeds = db.query(FeedSource).filter(
+            FeedSource.id.in_([f["id"] for f in group["feeds"]])
+        ).all()
+
+        if len(feeds) < 2:
+            continue
+
+        # Keep the best feed: prefer active, then most recently fetched, then earliest created
+        feeds.sort(key=lambda f: (
+            f.status == "active",
+            f.last_fetched or datetime.min,
+            -(f.created_at or datetime.max).timestamp(),
+        ), reverse=True)
+
+        keeper = feeds[0]
+        for dupe in feeds[1:]:
+            db.delete(dupe)
+            removed += 1
+
+    if removed > 0:
+        db.commit()
+
+    return {
+        "success": True,
+        "removed": removed,
+        "message": f"Removed {removed} duplicate feeds" if removed else "No same-type duplicates found",
     }
