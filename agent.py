@@ -75,7 +75,20 @@ def ensure_out_dir() -> None:
 
 
 def load_sources(path: str = SOURCES_FILE) -> List[str]:
-    """Read RSS feed URLs from sources.txt (one URL per line)."""
+    """Load news feed URLs from DB (active FeedSources), falling back to sources.txt."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            urls = session.query(FeedSource.feed_url).filter(
+                FeedSource.source_type == "news",
+                FeedSource.status == "active",
+            ).all()
+            if urls:
+                return [u[0] for u in urls]
+    except Exception:
+        pass  # DB not available, fall back to file
+
     with open(path, "r", encoding="utf-8") as f:
         return [
             line.strip()
@@ -699,7 +712,30 @@ def run_agent() -> str:
     except Exception as e:
         print(f"⚠ Email sending failed: {e}")
 
+    # Update feed source statuses in DB after run
+    _update_feed_statuses("news", sources, len(all_items))
+
     return md_path
+
+
+def _update_feed_statuses(source_type: str, feed_urls: list, total_items: int):
+    """Update FeedSource last_fetched and item_count after an agent run."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            feeds = session.query(FeedSource).filter(
+                FeedSource.source_type == source_type,
+                FeedSource.status.in_(["active", "error"]),
+            ).all()
+            for feed in feeds:
+                if feed.feed_url in feed_urls:
+                    feed.last_fetched = datetime.now(timezone.utc)
+                    feed.status = "active"
+                    feed.error_message = None
+            session.commit()
+    except Exception:
+        pass  # Non-critical
 
 
 if __name__ == "__main__":

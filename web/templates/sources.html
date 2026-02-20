@@ -5,171 +5,107 @@
 {% block content %}
 <div class="max-w-6xl mx-auto">
     <div class="flex items-center justify-between mb-8">
-        <h1 class="text-3xl font-bold text-white">Source Management</h1>
+        <h1 class="text-3xl font-bold text-white font-cyber neon-text">Source Management</h1>
         <div class="flex gap-3">
-            <button onclick="runDiscovery()" id="discoverBtn"
-                class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-                Discover New Sources
+            {% if (news_feeds|length + podcast_feeds|length + video_feeds|length) < 10 %}
+            <button onclick="importFromFiles()" id="importBtn"
+                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm">
+                Import from Files
             </button>
-            <button onclick="recalculateScores()"
-                class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
+            {% endif %}
+            <button onclick="runDiscovery()" id="discoverBtn"
+                class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm">
+                Discover New
+            </button>
+            <button onclick="recalculateScores()" id="recalcBtn"
+                class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm">
                 Recalculate Scores
             </button>
         </div>
     </div>
 
     <!-- Stats -->
-    <div class="grid grid-cols-4 gap-4 mb-8">
-        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div class="text-2xl font-bold text-white">{{ top_sources|length }}</div>
-            <div class="text-sm text-slate-400">Active Sources</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="bg-cyber-card rounded-lg p-4 border border-gray-800/50">
+            <div class="text-2xl font-bold text-neon-cyan font-cyber">{{ total_feeds }}</div>
+            <div class="text-sm text-slate-400">Total Feeds</div>
         </div>
-        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div class="text-2xl font-bold text-emerald-400">{{ suggested_sources|length }}</div>
-            <div class="text-sm text-slate-400">Suggested Sources</div>
+        <div class="bg-cyber-card rounded-lg p-4 border border-gray-800/50">
+            <div class="text-2xl font-bold text-neon-green font-cyber">{{ active_feeds }}</div>
+            <div class="text-sm text-slate-400">Active</div>
         </div>
-        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div class="text-2xl font-bold text-yellow-400">{{ low_quality_sources|length }}</div>
-            <div class="text-sm text-slate-400">Low Quality</div>
+        <div class="bg-cyber-card rounded-lg p-4 border border-gray-800/50">
+            <div class="text-2xl font-bold text-red-400 font-cyber">{{ error_feeds }}</div>
+            <div class="text-sm text-slate-400">Errors</div>
         </div>
-        <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div class="text-2xl font-bold text-blue-400">{{ recent_discoveries|length }}</div>
+        <div class="bg-cyber-card rounded-lg p-4 border border-gray-800/50">
+            <div class="text-2xl font-bold text-neon-magenta font-cyber">{{ recent_discoveries|length }}</div>
             <div class="text-sm text-slate-400">Pending Review</div>
         </div>
     </div>
 
     <!-- Tabs -->
-    <div class="flex gap-4 mb-6 border-b border-slate-700">
-        <button onclick="showTab('top')" id="tab-top" class="tab-btn px-4 py-2 text-white border-b-2 border-emerald-500">
-            Top Sources
+    <div class="flex gap-1 mb-6 border-b border-gray-800/50">
+        <button onclick="showTab('news')" id="tab-news" class="tab-btn px-5 py-2.5 text-sm font-medium text-white border-b-2 border-neon-cyan transition-colors">
+            News <span class="ml-1 text-xs text-slate-400">({{ news_feeds|length }})</span>
         </button>
-        <button onclick="showTab('suggested')" id="tab-suggested" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
-            Suggested
+        <button onclick="showTab('podcasts')" id="tab-podcasts" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
+            Podcasts <span class="ml-1 text-xs text-slate-500">({{ podcast_feeds|length }})</span>
         </button>
-        <button onclick="showTab('discoveries')" id="tab-discoveries" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
-            Discoveries
+        <button onclick="showTab('videos')" id="tab-videos" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
+            Videos <span class="ml-1 text-xs text-slate-500">({{ video_feeds|length }})</span>
         </button>
-        <button onclick="showTab('lowquality')" id="tab-lowquality" class="tab-btn px-4 py-2 text-slate-400 border-b-2 border-transparent hover:text-white">
-            Low Quality
+        <button onclick="showTab('discovery')" id="tab-discovery" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
+            Discovery <span class="ml-1 text-xs text-slate-500">({{ recent_discoveries|length }})</span>
         </button>
     </div>
 
-    <!-- Top Sources Tab -->
-    <div id="content-top" class="tab-content">
-        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-900">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Items</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Match %</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Clicks</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Citations</th>
-                        <th class="px-4 py-3 text-center text-sm text-slate-400">Status</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-700">
-                    {% for source in top_sources %}
-                    <tr class="hover:bg-slate-700/50">
-                        <td class="px-4 py-3">
-                            <span class="text-white font-medium">{{ source.domain }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-right">
-                            <span class="font-mono {% if source.quality_score >= 70 %}text-emerald-400{% elif source.quality_score >= 40 %}text-yellow-400{% else %}text-red-400{% endif %}">
-                                {{ "%.1f"|format(source.quality_score) }}
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-right text-slate-300">{{ source.total_items }}</td>
-                        <td class="px-4 py-3 text-right text-slate-300">
-                            {% if source.total_items > 0 %}
-                            {{ "%.0f"|format(source.matched_items / source.total_items * 100) }}%
-                            {% else %}
-                            -
-                            {% endif %}
-                        </td>
-                        <td class="px-4 py-3 text-right text-slate-300">{{ source.total_clicks }}</td>
-                        <td class="px-4 py-3 text-right text-slate-300">{{ source.citation_count }}</td>
-                        <td class="px-4 py-3 text-center">
-                            <button onclick="toggleSource('{{ source.domain }}')"
-                                class="{% if source.is_active %}bg-emerald-600{% else %}bg-slate-600{% endif %} text-white text-xs px-2 py-1 rounded">
-                                {{ "Active" if source.is_active else "Inactive" }}
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <!-- News Tab -->
+    <div id="content-news" class="tab-content">
+        {% set type_name = "news" %}
+        {% set feeds = news_feeds %}
+        {% include "partials/feed_tab.html" %}
     </div>
 
-    <!-- Suggested Sources Tab -->
-    <div id="content-suggested" class="tab-content hidden">
-        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-900">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Citations</th>
-                        <th class="px-4 py-3 text-center text-sm text-slate-400">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-700">
-                    {% for source in suggested_sources %}
-                    <tr class="hover:bg-slate-700/50">
-                        <td class="px-4 py-3">
-                            <span class="text-white font-medium">{{ source.domain }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-right">
-                            <span class="font-mono text-emerald-400">{{ "%.1f"|format(source.quality_score) }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-right text-slate-300">{{ source.citation_count }}</td>
-                        <td class="px-4 py-3 text-center">
-                            <button onclick="toggleSource('{{ source.domain }}')"
-                                class="bg-emerald-600 text-white text-xs px-3 py-1 rounded hover:bg-emerald-700">
-                                Add to Sources
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                    {% if not suggested_sources %}
-                    <tr>
-                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">
-                            No suggested sources yet. Run discovery to find new sources.
-                        </td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
+    <!-- Podcasts Tab -->
+    <div id="content-podcasts" class="tab-content hidden">
+        {% set type_name = "podcast" %}
+        {% set feeds = podcast_feeds %}
+        {% include "partials/feed_tab.html" %}
     </div>
 
-    <!-- Discoveries Tab -->
-    <div id="content-discoveries" class="tab-content hidden">
+    <!-- Videos Tab -->
+    <div id="content-videos" class="tab-content hidden">
+        {% set type_name = "video" %}
+        {% set feeds = video_feeds %}
+        {% include "partials/feed_tab.html" %}
+    </div>
+
+    <!-- Discovery Tab -->
+    <div id="content-discovery" class="tab-content hidden">
         <div class="space-y-4">
             {% for discovery in recent_discoveries %}
-            <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div class="bg-cyber-card rounded-lg p-4 border border-gray-800/50" id="discovery-{{ discovery.id }}">
                 <div class="flex items-start justify-between">
                     <div class="flex-1">
                         <div class="flex items-center gap-3 mb-2">
-                            <span class="{% if discovery.discovered_from == 'hackernews' %}bg-orange-600{% else %}bg-blue-600{% endif %} text-white text-xs px-2 py-1 rounded uppercase">
+                            <span class="{% if discovery.discovered_from == 'hackernews' %}bg-orange-600{% else %}bg-blue-600{% endif %} text-white text-xs px-2 py-1 rounded uppercase font-medium">
                                 {{ discovery.discovered_from }}
                             </span>
                             <span class="text-slate-400 text-sm">{{ discovery.domain }}</span>
-                            <span class="text-slate-500 text-sm">Score: {{ discovery.external_score }}</span>
+                            <span class="text-slate-500 text-sm font-mono">Score: {{ discovery.external_score }}</span>
                         </div>
-                        <a href="{{ discovery.url }}" target="_blank" class="text-white hover:text-emerald-400">
+                        <a href="{{ discovery.url }}" target="_blank" class="text-white hover:text-neon-cyan transition-colors">
                             {{ discovery.title or discovery.url }}
                         </a>
                     </div>
                     <div class="flex gap-2 ml-4">
                         <button onclick="approveDiscovery({{ discovery.id }})"
-                            class="px-3 py-1 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 text-sm">
+                            class="px-3 py-1.5 bg-emerald-600/20 text-emerald-400 rounded hover:bg-emerald-600/30 text-sm transition-colors">
                             Approve
                         </button>
                         <button onclick="rejectDiscovery({{ discovery.id }})"
-                            class="px-3 py-1 bg-red-600/20 text-red-400 rounded hover:bg-red-600/30 text-sm">
+                            class="px-3 py-1.5 bg-red-600/20 text-red-400 rounded hover:bg-red-600/30 text-sm transition-colors">
                             Reject
                         </button>
                     </div>
@@ -177,78 +113,140 @@
             </div>
             {% endfor %}
             {% if not recent_discoveries %}
-            <div class="bg-slate-800 rounded-lg p-8 border border-slate-700 text-center text-slate-400">
-                No pending discoveries. Run discovery to find new content.
+            <div class="bg-cyber-card rounded-lg p-8 border border-gray-800/50 text-center text-slate-400">
+                No pending discoveries. Click "Discover New" to find sources from HackerNews and Reddit.
             </div>
             {% endif %}
-        </div>
-    </div>
-
-    <!-- Low Quality Tab -->
-    <div id="content-lowquality" class="tab-content hidden">
-        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <table class="w-full">
-                <thead class="bg-slate-900">
-                    <tr>
-                        <th class="px-4 py-3 text-left text-sm text-slate-400">Domain</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Score</th>
-                        <th class="px-4 py-3 text-right text-sm text-slate-400">Match %</th>
-                        <th class="px-4 py-3 text-center text-sm text-slate-400">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-700">
-                    {% for source in low_quality_sources %}
-                    <tr class="hover:bg-slate-700/50">
-                        <td class="px-4 py-3">
-                            <span class="text-white font-medium">{{ source.domain }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-right">
-                            <span class="font-mono text-red-400">{{ "%.1f"|format(source.quality_score) }}</span>
-                        </td>
-                        <td class="px-4 py-3 text-right text-slate-300">
-                            {% if source.total_items > 0 %}
-                            {{ "%.0f"|format(source.matched_items / source.total_items * 100) }}%
-                            {% else %}
-                            -
-                            {% endif %}
-                        </td>
-                        <td class="px-4 py-3 text-center">
-                            <button onclick="toggleSource('{{ source.domain }}')"
-                                class="bg-red-600/20 text-red-400 text-xs px-3 py-1 rounded hover:bg-red-600/30">
-                                Disable
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                    {% if not low_quality_sources %}
-                    <tr>
-                        <td colspan="4" class="px-4 py-8 text-center text-slate-400">
-                            No low quality sources found.
-                        </td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
         </div>
     </div>
 </div>
 
 <script>
 function showTab(tabName) {
-    // Hide all content
     document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-    // Reset all tabs
     document.querySelectorAll('.tab-btn').forEach(el => {
-        el.classList.remove('text-white', 'border-emerald-500');
+        el.classList.remove('text-white', 'border-neon-cyan');
         el.classList.add('text-slate-400', 'border-transparent');
     });
-
-    // Show selected content
     document.getElementById('content-' + tabName).classList.remove('hidden');
-    // Highlight selected tab
     const tab = document.getElementById('tab-' + tabName);
-    tab.classList.add('text-white', 'border-emerald-500');
+    tab.classList.add('text-white', 'border-neon-cyan');
     tab.classList.remove('text-slate-400', 'border-transparent');
+}
+
+async function addFeed(sourceType) {
+    const urlInput = document.getElementById('add-url-' + sourceType);
+    const nameInput = document.getElementById('add-name-' + sourceType);
+    const url = urlInput.value.trim();
+    if (!url) return;
+
+    try {
+        const resp = await fetch('/api/feeds', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                feed_url: url,
+                source_type: sourceType,
+                name: nameInput.value.trim() || null,
+            }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast(`Added "${data.feed.name}"`, 'success');
+            window.location.reload();
+        } else {
+            showToast(data.detail || 'Failed to add feed', 'error');
+        }
+    } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+    }
+}
+
+async function toggleFeed(feedId) {
+    const row = document.getElementById('feed-' + feedId);
+    const badge = row.querySelector('.status-badge');
+    const currentStatus = badge.dataset.status;
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+
+    try {
+        const resp = await fetch(`/api/feeds/${feedId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status: newStatus}),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            badge.dataset.status = data.status;
+            if (data.status === 'active') {
+                badge.className = 'status-badge px-2 py-0.5 rounded text-xs font-medium bg-emerald-600/20 text-emerald-400';
+                badge.textContent = 'Active';
+            } else {
+                badge.className = 'status-badge px-2 py-0.5 rounded text-xs font-medium bg-slate-600/30 text-slate-400';
+                badge.textContent = 'Inactive';
+            }
+            showToast(`Feed ${data.status}`, 'success');
+        }
+    } catch (e) {
+        showToast('Toggle failed: ' + e.message, 'error');
+    }
+}
+
+async function testFeed(feedId) {
+    const btn = document.querySelector(`#feed-${feedId} .test-btn`);
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+
+    try {
+        const resp = await fetch(`/api/feeds/${feedId}/test`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            showToast(`Feed OK: ${data.item_count} items found`, 'success');
+        } else {
+            showToast(`Feed error: ${data.error}`, 'error');
+        }
+        // Reload to show updated status
+        setTimeout(() => window.location.reload(), 1000);
+    } catch (e) {
+        showToast('Test failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test';
+    }
+}
+
+async function deleteFeed(feedId, feedName) {
+    if (!confirm(`Delete "${feedName}"? This cannot be undone.`)) return;
+
+    try {
+        const resp = await fetch(`/api/feeds/${feedId}`, {method: 'DELETE'});
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            document.getElementById('feed-' + feedId).remove();
+            showToast(`Deleted "${feedName}"`, 'success');
+        }
+    } catch (e) {
+        showToast('Delete failed: ' + e.message, 'error');
+    }
+}
+
+async function importFromFiles() {
+    const btn = document.getElementById('importBtn');
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+
+    try {
+        const resp = await fetch('/api/feeds/import', {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            showToast(`Imported ${data.imported} feeds from .txt files`, 'success');
+            if (data.imported > 0) window.location.reload();
+        }
+    } catch (e) {
+        showToast('Import failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Import from Files';
+    }
 }
 
 async function runDiscovery() {
@@ -257,61 +255,71 @@ async function runDiscovery() {
     btn.textContent = 'Discovering...';
 
     try {
-        const response = await fetch('/api/sources/discover', { method: 'POST' });
-        const data = await response.json();
-
+        const resp = await fetch('/api/sources/discover', {method: 'POST'});
+        const data = await resp.json();
         if (data.success) {
-            alert(`Discovery complete!\nHN Top: ${data.results.hackernews_top}\nHN New: ${data.results.hackernews_new}\nReddit: ${data.results.reddit}\nDomains: ${data.results.unique_domains}`);
+            showToast(`Discovery complete! Found ${data.results.unique_domains} domains`, 'success');
             window.location.reload();
         }
-    } catch (error) {
-        alert('Discovery failed: ' + error.message);
+    } catch (e) {
+        showToast('Discovery failed: ' + e.message, 'error');
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Discover New Sources';
+        btn.textContent = 'Discover New';
     }
 }
 
 async function recalculateScores() {
-    try {
-        const response = await fetch('/api/sources/recalculate', { method: 'POST' });
-        const data = await response.json();
-        alert(`Recalculated ${data.updated_count} source scores`);
-        window.location.reload();
-    } catch (error) {
-        alert('Recalculation failed: ' + error.message);
-    }
-}
+    const btn = document.getElementById('recalcBtn');
+    btn.disabled = true;
+    btn.textContent = 'Recalculating...';
 
-async function toggleSource(domain) {
     try {
-        const response = await fetch(`/api/sources/${encodeURIComponent(domain)}/toggle`, { method: 'PUT' });
-        const data = await response.json();
-        window.location.reload();
-    } catch (error) {
-        alert('Toggle failed: ' + error.message);
+        const resp = await fetch('/api/sources/recalculate', {method: 'POST'});
+        const data = await resp.json();
+        showToast(`Recalculated ${data.updated_count} source scores`, 'success');
+    } catch (e) {
+        showToast('Recalculation failed: ' + e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Recalculate Scores';
     }
 }
 
 async function approveDiscovery(id) {
     try {
-        const response = await fetch(`/api/sources/discoveries/${id}/approve`, { method: 'PUT' });
-        if (response.ok) {
-            window.location.reload();
+        const resp = await fetch(`/api/sources/discoveries/${id}/approve`, {method: 'PUT'});
+        if (resp.ok) {
+            document.getElementById('discovery-' + id).remove();
+            showToast('Source approved', 'success');
         }
-    } catch (error) {
-        alert('Approval failed: ' + error.message);
+    } catch (e) {
+        showToast('Approval failed: ' + e.message, 'error');
     }
 }
 
 async function rejectDiscovery(id) {
     try {
-        const response = await fetch(`/api/sources/discoveries/${id}/reject`, { method: 'PUT' });
-        if (response.ok) {
-            window.location.reload();
+        const resp = await fetch(`/api/sources/discoveries/${id}/reject`, {method: 'PUT'});
+        if (resp.ok) {
+            document.getElementById('discovery-' + id).remove();
+            showToast('Source rejected', 'success');
         }
-    } catch (error) {
-        alert('Rejection failed: ' + error.message);
+    } catch (e) {
+        showToast('Rejection failed: ' + e.message, 'error');
+    }
+}
+
+// Fallback showToast if base template doesn't provide one
+if (typeof showToast === 'undefined') {
+    function showToast(msg, type) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-4 right-4 px-4 py-3 rounded-lg text-sm z-50 transition-opacity duration-300 ${
+            type === 'error' ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+        }`;
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
     }
 }
 </script>

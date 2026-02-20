@@ -201,6 +201,25 @@ class DiscoveredSource(Base):
         return f"<DiscoveredSource(domain={self.domain}, from={self.discovered_from})>"
 
 
+class FeedSource(Base):
+    """A managed feed source (RSS/YouTube) stored in the database."""
+    __tablename__ = "feed_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    feed_url = Column(Text, unique=True, nullable=False)
+    source_type = Column(String(20), nullable=False)  # "news", "podcast", "video"
+    status = Column(String(20), default="active")  # "active", "inactive", "error"
+    error_message = Column(Text, nullable=True)
+    last_fetched = Column(DateTime, nullable=True)
+    item_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<FeedSource(id={self.id}, name={self.name}, type={self.source_type})>"
+
+
 class EmailSubscriber(Base):
     """Email subscriber for daily briefs."""
     __tablename__ = "email_subscribers"

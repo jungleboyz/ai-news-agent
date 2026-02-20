@@ -76,7 +76,20 @@ def ensure_out_dir() -> None:
 
 
 def load_podcast_feeds(path: str = PODCASTS_FILE) -> List[str]:
-    """Read podcast RSS feed URLs from podcasts.txt (one URL per line)."""
+    """Load podcast feed URLs from DB (active FeedSources), falling back to podcasts.txt."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            urls = session.query(FeedSource.feed_url).filter(
+                FeedSource.source_type == "podcast",
+                FeedSource.status == "active",
+            ).all()
+            if urls:
+                return [u[0] for u in urls]
+    except Exception:
+        pass  # DB not available, fall back to file
+
     if not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as f:
@@ -429,4 +442,27 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
     if USE_SEMANTIC_SCORING and picked:
         store_podcast_embeddings(picked)
 
+    # Update feed source statuses in DB
+    _update_feed_statuses(feeds)
+
     return picked
+
+
+def _update_feed_statuses(feed_urls: list):
+    """Update FeedSource last_fetched after a podcast agent run."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            feeds = session.query(FeedSource).filter(
+                FeedSource.source_type == "podcast",
+                FeedSource.status.in_(["active", "error"]),
+            ).all()
+            for feed in feeds:
+                if feed.feed_url in feed_urls:
+                    feed.last_fetched = datetime.now(timezone.utc)
+                    feed.status = "active"
+                    feed.error_message = None
+            session.commit()
+    except Exception:
+        pass  # Non-critical

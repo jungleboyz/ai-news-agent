@@ -64,7 +64,8 @@ def init_db():
     from sqlalchemy import text
     from web.models import (
         Digest, Item, TopicCluster, UserProfile, Interaction,
-        PreferencePreset, SourceQuality, DiscoveredSource, EmailSubscriber
+        PreferencePreset, SourceQuality, DiscoveredSource, EmailSubscriber,
+        FeedSource
     )  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

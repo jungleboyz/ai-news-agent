@@ -41,7 +41,24 @@ limiter = Limiter(key_func=get_real_ip)
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
     init_db()
+    _auto_import_feeds()
     yield
+
+
+def _auto_import_feeds():
+    """If feed_sources table is empty, seed from .txt files."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            count = session.query(FeedSource).count()
+            if count == 0:
+                from web.routes.sources import import_feeds_from_files
+                imported = import_feeds_from_files(session)
+                if imported:
+                    print(f"Auto-imported {imported} feed sources from .txt files")
+    except Exception as e:
+        print(f"Warning: feed auto-import failed: {e}")
 
 
 # Initialize FastAPI app

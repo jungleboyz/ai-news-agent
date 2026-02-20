@@ -474,7 +474,20 @@ def summarize_videos(videos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def load_video_feeds(filepath: str = "videos.txt") -> List[str]:
-    """Load video feed URLs from file."""
+    """Load video feed URLs from DB (active FeedSources), falling back to videos.txt."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            urls = session.query(FeedSource.feed_url).filter(
+                FeedSource.source_type == "video",
+                FeedSource.status == "active",
+            ).all()
+            if urls:
+                return [u[0] for u in urls]
+    except Exception:
+        pass  # DB not available, fall back to file
+
     feeds = []
     try:
         with open(filepath, 'r') as f:
@@ -510,9 +523,31 @@ def run_video_agent(max_videos: int = 10, days_back: int = 7) -> List[Dict[str, 
     # Generate summaries
     if relevant_videos:
         summarized = summarize_videos(relevant_videos)
+        _update_feed_statuses(feeds)
         return summarized
 
+    _update_feed_statuses(feeds)
     return []
+
+
+def _update_feed_statuses(feed_urls: list):
+    """Update FeedSource last_fetched after a video agent run."""
+    try:
+        from web.database import SessionLocal
+        from web.models import FeedSource
+        with SessionLocal() as session:
+            db_feeds = session.query(FeedSource).filter(
+                FeedSource.source_type == "video",
+                FeedSource.status.in_(["active", "error"]),
+            ).all()
+            for feed in db_feeds:
+                if feed.feed_url in feed_urls:
+                    feed.last_fetched = datetime.now()
+                    feed.status = "active"
+                    feed.error_message = None
+            session.commit()
+    except Exception:
+        pass  # Non-critical
 
 
 if __name__ == "__main__":
