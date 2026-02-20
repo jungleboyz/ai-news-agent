@@ -7,7 +7,6 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
-from services.daily_brief import DailyBriefService
 from web.database import get_db
 from web.models import Digest, Item
 
@@ -21,6 +20,8 @@ async def homepage(
     db: Session = Depends(get_db),
 ):
     """Homepage shows the Daily Brief directly."""
+    from services.daily_brief import DailyBriefService
+
     service = DailyBriefService()
 
     target_date = None

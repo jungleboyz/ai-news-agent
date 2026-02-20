@@ -39,5 +39,5 @@ gunicorn>=21.0.0
 slowapi>=0.1.9
 
 # Web scraping (Firecrawl)
-firecrawl-py>=4.16.0
+firecrawl-py>=1.0.0
 

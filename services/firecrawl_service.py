@@ -32,6 +32,24 @@ class FirecrawlService:
     def available(self) -> bool:
         return self._client is not None
 
+    def _extract_markdown(self, doc) -> str:
+        """Extract markdown from a scrape result (handles dict or object)."""
+        if isinstance(doc, dict):
+            return doc.get("markdown", "") or ""
+        return getattr(doc, "markdown", "") or ""
+
+    def _extract_metadata(self, doc) -> dict:
+        """Extract metadata from a scrape result (handles dict or object)."""
+        if isinstance(doc, dict):
+            return doc.get("metadata", {}) or {}
+        meta = getattr(doc, "metadata", None)
+        if meta is None:
+            return {}
+        if isinstance(meta, dict):
+            return meta
+        # Pydantic model — convert to dict
+        return meta.dict() if hasattr(meta, "dict") else {}
+
     def scrape_article(self, url: str) -> Optional[str]:
         """Scrape a single URL and return markdown content.
 
@@ -41,7 +59,7 @@ class FirecrawlService:
             return None
         try:
             doc = self._client.scrape(url, formats=["markdown"])
-            markdown = doc.markdown or ""
+            markdown = self._extract_markdown(doc)
             if markdown:
                 return markdown[:MAX_CONTENT_LENGTH]
             return None
@@ -61,10 +79,9 @@ class FirecrawlService:
         try:
             docs = self._client.batch_scrape(urls, formats=["markdown"])
             for doc in docs:
-                source_url = ""
-                if doc.metadata:
-                    source_url = doc.metadata.get("sourceURL", "") or doc.metadata.get("url", "")
-                markdown = doc.markdown or ""
+                meta = self._extract_metadata(doc)
+                source_url = meta.get("sourceURL", "") or meta.get("url", "")
+                markdown = self._extract_markdown(doc)
                 if source_url and markdown:
                     results[source_url] = markdown[:MAX_CONTENT_LENGTH]
         except Exception as e:
@@ -85,7 +102,9 @@ class FirecrawlService:
         if not self._client:
             return []
         try:
-            search_data = self._client.search(query, limit=limit)
+            # Pass only the query — limit via kwargs may not be supported
+            # in all SDK versions
+            search_data = self._client.search(query)
             results = []
             # Handle both list and object responses across SDK versions
             items = search_data
@@ -106,6 +125,8 @@ class FirecrawlService:
                     markdown = (getattr(item, "markdown", "") or "")[:MAX_CONTENT_LENGTH]
                 if url:
                     results.append({"url": url, "title": title, "markdown": markdown})
+                if len(results) >= limit:
+                    break
             return results
         except Exception as e:
             print(f"  ⚠ Firecrawl search failed for '{query}': {e}")
