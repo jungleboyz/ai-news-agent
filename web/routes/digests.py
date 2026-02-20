@@ -1,11 +1,13 @@
 """Digest list and detail view routes."""
 from collections import OrderedDict
 from datetime import date
+from typing import Optional
 from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
+from services.daily_brief import DailyBriefService
 from web.database import get_db
 from web.models import Digest, Item
 
@@ -13,9 +15,39 @@ router = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
-async def homepage(request: Request):
-    """Homepage redirects to the Daily Brief."""
-    return RedirectResponse(url="/brief", status_code=302)
+async def homepage(
+    request: Request,
+    digest_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Homepage shows the Daily Brief directly."""
+    service = DailyBriefService()
+
+    target_date = None
+    if digest_date:
+        try:
+            target_date = date.fromisoformat(digest_date)
+        except ValueError:
+            pass
+
+    if not target_date:
+        latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
+        target_date = latest_digest.date if latest_digest else date.today()
+
+    summary = service.generate_executive_summary(db, target_date)
+
+    digests = db.query(Digest).order_by(Digest.date.desc()).limit(14).all()
+    available_dates = [d.date for d in digests]
+
+    return request.app.state.templates.TemplateResponse(
+        "brief.html",
+        {
+            "request": request,
+            "summary": summary,
+            "digest_date": target_date,
+            "available_dates": available_dates,
+        },
+    )
 
 
 @router.get("/digests", response_class=HTMLResponse)
