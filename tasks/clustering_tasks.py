@@ -162,7 +162,7 @@ def cluster_digest(digest_id: int, n_clusters: Optional[int] = None) -> dict:
                 if item:
                     item.cluster_id = cluster["cluster_id"]
                     item.cluster_label = cluster["label"]
-                    item.cluster_confidence = item_dict.get("cluster_confidence", 0.5)
+                    item.cluster_confidence = float(item_dict.get("cluster_confidence", 0.5))
 
         db.commit()
 
