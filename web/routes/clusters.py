@@ -246,9 +246,9 @@ async def api_digest_clusters(
 @router.post("/api/clusters/rebuild")
 async def api_rebuild_clusters(
     db: Session = Depends(get_db),
-    days: int = Query(7, ge=1, le=30),
+    days: Optional[int] = Query(None, ge=1, description="Days to look back. Omit for all digests."),
 ):
-    """Rebuild topic clusters for recent digests (generates missing embeddings)."""
+    """Rebuild topic clusters for digests (generates missing embeddings). Omit days for all."""
     from tasks.clustering_tasks import recluster_recent_digests
     results = recluster_recent_digests(days=days)
     total_clusters = sum(r.get("clusters_created", 0) for r in results if "error" not in r)

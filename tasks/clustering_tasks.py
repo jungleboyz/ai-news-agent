@@ -212,11 +212,11 @@ def cluster_latest_digest(n_clusters: Optional[int] = None) -> dict:
         db.close()
 
 
-def recluster_recent_digests(days: int = 7, n_clusters: Optional[int] = None) -> list[dict]:
-    """Re-cluster all digests from the last N days.
+def recluster_recent_digests(days: Optional[int] = 7, n_clusters: Optional[int] = None) -> list[dict]:
+    """Re-cluster digests. If days is None, process all digests.
 
     Args:
-        days: Number of days to look back.
+        days: Number of days to look back, or None for all digests.
         n_clusters: Number of clusters per digest (auto-detected if None).
 
     Returns:
@@ -228,15 +228,17 @@ def recluster_recent_digests(days: int = 7, n_clusters: Optional[int] = None) ->
     results = []
 
     try:
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        digests = (
-            db.query(Digest)
-            .filter(Digest.created_at >= cutoff)
-            .order_by(Digest.date.desc())
-            .all()
-        )
+        query = db.query(Digest).order_by(Digest.date.desc())
 
-        print(f"🔄 Re-clustering {len(digests)} digests from last {days} days")
+        if days is not None:
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            query = query.filter(Digest.created_at >= cutoff)
+            print(f"🔄 Re-clustering digests from last {days} days")
+        else:
+            print("🔄 Re-clustering ALL digests")
+
+        digests = query.all()
+        print(f"  📋 Found {len(digests)} digests to process")
 
         for digest in digests:
             result = cluster_digest(digest.id, n_clusters)
