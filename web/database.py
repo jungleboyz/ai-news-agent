@@ -22,6 +22,7 @@ if DATABASE_URL:
         pool_pre_ping=True,  # Handle connection drops
         pool_size=5,
         max_overflow=10,
+        connect_args={"connect_timeout": 10},
     )
 else:
     # Development: Use SQLite
@@ -68,7 +69,9 @@ def init_db():
         FeedSource
     )  # noqa: F401
 
+    print("init_db: creating tables...")
     Base.metadata.create_all(bind=engine)
+    print("init_db: tables created successfully")
 
     # Brief cache columns (brief_json, brief_generated_at) are defined in the
     # Digest model and created by create_all() for new DBs. For existing DBs,

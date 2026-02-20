@@ -40,8 +40,11 @@ limiter = Limiter(key_func=get_real_ip)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown."""
+    print("Startup: initializing database...")
     init_db()
+    print("Startup: importing feeds...")
     _auto_import_feeds()
+    print("Startup: ready")
     yield
 
 
