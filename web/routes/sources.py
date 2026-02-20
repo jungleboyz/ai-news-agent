@@ -288,6 +288,8 @@ def import_feeds_from_files(db: Session) -> int:
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     imported = 0
+    seen_urls = set()
+
     for filename, source_type in file_map.items():
         filepath = os.path.join(project_root, filename)
         if not os.path.exists(filepath):
@@ -300,6 +302,10 @@ def import_feeds_from_files(db: Session) -> int:
             ]
 
         for url in urls:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
             existing = db.query(FeedSource).filter(FeedSource.feed_url == url).first()
             if existing:
                 continue
@@ -313,6 +319,9 @@ def import_feeds_from_files(db: Session) -> int:
             )
             db.add(feed)
             imported += 1
+
+        # Flush after each file so cross-file duplicate checks work
+        db.flush()
 
     db.commit()
     return imported
