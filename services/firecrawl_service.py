@@ -50,7 +50,7 @@ class FirecrawlService:
         # Pydantic model — convert to dict
         return meta.dict() if hasattr(meta, "dict") else {}
 
-    def scrape_article(self, url: str) -> Optional[str]:
+    def scrape_article(self, url: str, max_length: int = MAX_CONTENT_LENGTH) -> Optional[str]:
         """Scrape a single URL and return markdown content.
 
         Returns None if Firecrawl is not configured or the call fails.
@@ -61,7 +61,7 @@ class FirecrawlService:
             doc = self._client.scrape(url, formats=["markdown"])
             markdown = self._extract_markdown(doc)
             if markdown:
-                return markdown[:MAX_CONTENT_LENGTH]
+                return markdown[:max_length]
             return None
         except Exception as e:
             print(f"  ⚠ Firecrawl scrape failed for {url}: {e}")

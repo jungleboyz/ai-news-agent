@@ -383,6 +383,19 @@ def run_agent() -> str:
         print("   (News processing will continue independently)")
         video_episodes = []
 
+    # Run web scraper agent (scrapes non-RSS listing pages via Firecrawl)
+    try:
+        from web_scraper_agent import run_web_scraper_agent
+        web_articles = run_web_scraper_agent()
+        if web_articles:
+            print(f"✓ Found {len(web_articles)} web articles")
+        else:
+            print("⚠ No new web articles found")
+    except Exception as e:
+        print(f"⚠ Warning: Web scraper agent failed: {e}")
+        print("   (News processing will continue independently)")
+        web_articles = []
+
     all_items = []
     for src in sources:
         items = fetch_rss_items(src)
@@ -510,7 +523,21 @@ def run_agent() -> str:
             "summary": vid.get("summary", ""),
             "show_name": vid.get("channel", "Unknown")
         })
-    
+
+    # Add web articles
+    for article in web_articles:
+        all_digest_items.append({
+            "type": "web",
+            "title": article["title"],
+            "link": article["link"],
+            "score": article["score"],
+            "semantic_score": article.get("semantic_score"),
+            "embedding_id": article.get("id"),
+            "source": article.get("source", ""),
+            "summary": article.get("summary", ""),
+            "show_name": None
+        })
+
     # Sort all items by score (descending)
     all_digest_items.sort(key=lambda x: x["score"], reverse=True)
 
@@ -525,21 +552,25 @@ def run_agent() -> str:
         f.write(f"Sources: {len(sources)} | New items considered: {len(fresh)}")
         if podcast_episodes:
             f.write(f" | Podcasts: {len(podcast_episodes)}")
+        if web_articles:
+            f.write(f" | Web: {len(web_articles)}")
         f.write(f" | Total items: {len(all_digest_items)}\n\n")
-        
-        # Unified list of all items (news + podcasts)
+
+        # Unified list of all items (news + podcasts + web)
         for i, item in enumerate(all_digest_items, 1):
             tag = "MATCH" if item["score"] > 0 else "FALLBACK"
             if item["type"] == "news":
                 item_type = "📰"
             elif item["type"] == "podcast":
                 item_type = "🎙️"
+            elif item["type"] == "web":
+                item_type = "🌐"
             else:
                 item_type = "📺"
 
             f.write(f"### {i}. {item_type} [{item['score']}] ({tag}) {item['title']}\n\n")
 
-            if item["type"] == "news":
+            if item["type"] in ("news", "web"):
                 f.write(f"- Link: {item['link']}\n")
                 f.write(f"- Source: {item['source']}\n\n")
             elif item["type"] == "podcast":
@@ -575,6 +606,8 @@ def run_agent() -> str:
         f.write(f'      <p class="text-slate-300">Sources: {len(sources)} · New items considered: {len(fresh)}')
         if podcast_episodes:
             f.write(f' · Podcasts: {len(podcast_episodes)}')
+        if web_articles:
+            f.write(f' · Web: {len(web_articles)}')
         f.write(f' · Total items: {len(all_digest_items)}</p>\n')
         f.write("    </header>\n\n")
         
@@ -590,6 +623,9 @@ def run_agent() -> str:
             elif item["type"] == "podcast":
                 item_type_icon = "🎙️"
                 item_type_label = "Podcast"
+            elif item["type"] == "web":
+                item_type_icon = "🌐"
+                item_type_label = "Web"
             else:
                 item_type_icon = "📺"
                 item_type_label = "Video"
@@ -614,7 +650,7 @@ def run_agent() -> str:
             f.write(f'        </div>\n')
             
             f.write('        <ul class="mt-4 space-y-2 text-sm text-slate-200">\n')
-            if item["type"] == "news":
+            if item["type"] in ("news", "web"):
                 f.write(f'          <li><span class="font-semibold text-slate-100">Link:</span> <a href="{item["link"]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">{item["link"]}</a></li>\n')
                 f.write(f'          <li><span class="font-semibold text-slate-100">Source:</span> <span class="text-slate-300">{item["source"]}</span></li>\n')
             elif item["type"] == "podcast":
@@ -627,7 +663,7 @@ def run_agent() -> str:
 
             # Show summary if it exists
             if item["summary"]:
-                summary_label = "Why this matters:" if item["type"] == "news" else "Summary:"
+                summary_label = "Why this matters:" if item["type"] in ("news", "web") else "Summary:"
                 is_error = item["summary"].startswith("(Failed") or item["summary"].startswith("(OpenAI")
                 summary_class = "text-red-300" if is_error else "text-slate-200"
                 f.write('        <div class="mt-4 pt-4 border-t border-slate-800">\n')

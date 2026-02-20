@@ -7,7 +7,7 @@
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-3xl font-bold text-white font-cyber neon-text">Source Management</h1>
         <div class="flex gap-3">
-            {% if (news_feeds|length + podcast_feeds|length + video_feeds|length) < 10 %}
+            {% if (news_feeds|length + podcast_feeds|length + video_feeds|length + web_feeds|length) < 10 %}
             <button onclick="importFromFiles()" id="importBtn"
                 class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm">
                 Import from Files
@@ -55,6 +55,9 @@
         <button onclick="showTab('videos')" id="tab-videos" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
             Videos <span class="ml-1 text-xs text-slate-500">({{ video_feeds|length }})</span>
         </button>
+        <button onclick="showTab('web')" id="tab-web" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
+            Web <span class="ml-1 text-xs text-slate-500">({{ web_feeds|length }})</span>
+        </button>
         <button onclick="showTab('discovery')" id="tab-discovery" class="tab-btn px-5 py-2.5 text-sm font-medium text-slate-400 border-b-2 border-transparent hover:text-white transition-colors">
             Discovery <span class="ml-1 text-xs text-slate-500">({{ recent_discoveries|length }})</span>
         </button>
@@ -78,6 +81,13 @@
     <div id="content-videos" class="tab-content hidden">
         {% set type_name = "video" %}
         {% set feeds = video_feeds %}
+        {% include "partials/feed_tab.html" %}
+    </div>
+
+    <!-- Web Tab -->
+    <div id="content-web" class="tab-content hidden">
+        {% set type_name = "web" %}
+        {% set feeds = web_feeds %}
         {% include "partials/feed_tab.html" %}
     </div>
 

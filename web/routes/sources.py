@@ -86,6 +86,10 @@ async def sources_page(
         FeedSource.source_type == "video"
     ).order_by(FeedSource.name).all()
 
+    web_feeds = db.query(FeedSource).filter(
+        FeedSource.source_type == "web"
+    ).order_by(FeedSource.name).all()
+
     # Feed stats
     total_feeds = db.query(func.count(FeedSource.id)).scalar()
     active_feeds = db.query(func.count(FeedSource.id)).filter(
@@ -110,6 +114,7 @@ async def sources_page(
             "news_feeds": news_feeds,
             "podcast_feeds": podcast_feeds,
             "video_feeds": video_feeds,
+            "web_feeds": web_feeds,
             "total_feeds": total_feeds,
             "active_feeds": active_feeds,
             "error_feeds": error_feeds,
@@ -158,8 +163,8 @@ async def create_feed(
     db: Session = Depends(get_db),
 ):
     """Add a new feed source. Auto-validates and names if name not provided."""
-    if body.source_type not in ("news", "podcast", "video"):
-        raise HTTPException(status_code=400, detail="source_type must be news, podcast, or video")
+    if body.source_type not in ("news", "podcast", "video", "web"):
+        raise HTTPException(status_code=400, detail="source_type must be news, podcast, video, or web")
 
     # Check for duplicate
     existing = db.query(FeedSource).filter(FeedSource.feed_url == body.feed_url).first()
@@ -169,11 +174,15 @@ async def create_feed(
     # Auto-name from URL or validation
     name = body.name
     if not name:
-        result = FeedValidator.test_feed(body.feed_url)
-        if result["title"]:
-            name = result["title"]
-        else:
+        if body.source_type == "web":
+            # Web sources aren't RSS — just name from URL
             name = FeedValidator.name_from_url(body.feed_url)
+        else:
+            result = FeedValidator.test_feed(body.feed_url)
+            if result["title"]:
+                name = result["title"]
+            else:
+                name = FeedValidator.name_from_url(body.feed_url)
 
     feed = FeedSource(
         name=name,
@@ -284,6 +293,7 @@ def import_feeds_from_files(db: Session) -> int:
         "sources.txt": "news",
         "podcasts.txt": "podcast",
         "videos.txt": "video",
+        "web_sources.txt": "web",
     }
 
     # Find project root (where .txt files live)
