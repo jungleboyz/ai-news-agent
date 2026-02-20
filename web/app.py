@@ -237,6 +237,29 @@ async def cron_run_digest(request: Request):
     return {"status": "started", "time": dt.utcnow().isoformat()}
 
 
+@app.post("/cron/rebuild-clusters")
+async def cron_rebuild_clusters(request: Request):
+    """Rebuild topic clusters for all digests. Auth via cron secret."""
+    auth = request.headers.get("Authorization")
+    if auth != f"Bearer {settings.cron_secret}":
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _run():
+        from tasks.clustering_tasks import recluster_recent_digests
+        results = recluster_recent_digests(days=None)
+        total = sum(r.get("clusters_created", 0) for r in results if "error" not in r)
+        print(f"🏷️ Cluster rebuild complete: {total} clusters across {len(results)} digests")
+
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
+
+    from datetime import datetime as dt
+    return {"status": "started", "time": dt.utcnow().isoformat()}
+
+
 @app.get("/api/admin/scheduler")
 async def get_scheduler_status():
     """Get scheduler status."""
