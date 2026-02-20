@@ -9,16 +9,14 @@
     {% else %}
         border-slate-800 bg-slate-900/70 hover:bg-slate-900
     {% endif %}"
-    data-item-id="{{ item.id }}">
+    data-item-id="{{ item.id }}" tabindex="0">
 
     {% if is_hero %}
-    <!-- Hero glow accent -->
     <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-neon-cyan to-transparent"></div>
     {% endif %}
 
-    <!-- Position badge and action buttons -->
+    <!-- Action buttons -->
     <div class="absolute top-3 right-3 flex items-center gap-2">
-        <!-- Action buttons -->
         <button onclick="trackInteraction({{ item.id }}, 'save')" title="Save for later"
             class="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors opacity-60 hover:opacity-100">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -43,81 +41,70 @@
     </div>
 
     <div class="flex items-start gap-3 mb-3">
-        <!-- Position number with tier styling -->
         <span class="text-sm font-mono flex-shrink-0
             {% if is_hero %}text-neon-cyan font-bold{% elif is_featured %}text-emerald-400{% else %}text-slate-500{% endif %}">
             {{ item.position }}.
         </span>
         <div class="flex-1">
-            <!-- Type indicator -->
-            <div class="flex items-center gap-2 mb-1">
+            <!-- Type + cluster tags -->
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
                 {% if item.type == 'news' %}
-                <span class="text-lg">&#x1F4F0;</span>
-                <span class="text-xs text-slate-400 uppercase">News</span>
+                <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">News</span>
                 {% else %}
-                <span class="text-lg">&#x1F399;&#xFE0F;</span>
-                <span class="text-xs text-slate-400 uppercase">Podcast</span>
+                <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">Podcast</span>
                 {% endif %}
                 {% if item.cluster_label %}
                 <span class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                     {{ item.cluster_label }}
                 </span>
                 {% endif %}
-            </div>
-
-            <!-- Title with tier sizing -->
-            <h2 class="font-semibold text-slate-50 leading-tight pr-24
-                {% if is_hero %}text-2xl{% elif is_featured %}text-xl{% else %}text-lg{% endif %}">
-                {{ item.title }}
-            </h2>
-
-            <!-- Score badge -->
-            <div class="mt-2 flex items-center gap-2 text-sm">
-                <span class="px-2 py-0.5 rounded font-mono
+                <span class="px-2 py-0.5 rounded font-mono text-xs
                     {% if item.score >= 8 %}bg-emerald-500/20 text-emerald-300
                     {% elif item.score >= 5 %}bg-blue-500/20 text-blue-300
                     {% elif item.score > 0 %}bg-slate-800 text-slate-300
                     {% else %}bg-slate-800/50 text-slate-500{% endif %}">
-                    [{{ item.score }}]
+                    {{ item.score }}
                 </span>
+            </div>
+
+            <!-- Title as link -->
+            <h2 class="font-semibold leading-tight pr-24
+                {% if is_hero %}text-2xl{% elif is_featured %}text-xl{% else %}text-lg{% endif %}">
+                <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer"
+                   onclick="trackInteraction({{ item.id }}, 'click')"
+                   class="text-slate-50 hover:text-emerald-400 transition-colors">
+                    {{ item.title }}
+                </a>
+            </h2>
+
+            <!-- Source line -->
+            <div class="mt-2 flex items-center gap-2 text-sm text-slate-400">
+                {% if item.type == 'news' %}
+                <span>{{ item.source }}</span>
+                {% else %}
+                <span>{{ item.show_name }}</span>
+                {% endif %}
+                <span class="text-slate-600">&middot;</span>
+                {% set domain = item.link.split('//')[1].split('/')[0] if '//' in item.link else item.link %}
+                <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer"
+                   onclick="trackInteraction({{ item.id }}, 'click')"
+                   class="text-blue-400 hover:text-blue-300 transition-colors truncate max-w-xs">
+                    {{ domain }}
+                </a>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-slate-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
             </div>
         </div>
     </div>
 
-    <!-- Metadata -->
-    <ul class="mt-4 space-y-2 text-sm text-slate-200">
-        {% if item.type == 'news' %}
-        <li>
-            <span class="font-semibold text-slate-100">Link:</span>
-            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" onclick="trackInteraction({{ item.id }}, 'click')" class="text-blue-400 hover:text-blue-300 underline break-all item-link">
-                {{ item.link }}
-            </a>
-        </li>
-        <li>
-            <span class="font-semibold text-slate-100">Source:</span>
-            <span class="text-slate-300">{{ item.source }}</span>
-        </li>
-        {% else %}
-        <li>
-            <span class="font-semibold text-slate-100">Show:</span>
-            <span class="text-slate-300">{{ item.show_name }}</span>
-        </li>
-        <li>
-            <span class="font-semibold text-slate-100">Link:</span>
-            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer" onclick="trackInteraction({{ item.id }}, 'click')" class="text-blue-400 hover:text-blue-300 underline break-all item-link">
-                {{ item.link }}
-            </a>
-        </li>
-        {% endif %}
-    </ul>
-
     <!-- Summary -->
     {% if item.summary %}
-    <div class="mt-4 pt-4 border-t border-slate-800">
-        <p class="font-semibold text-slate-100 mb-2">
+    <div class="mt-4 pt-4 border-t border-slate-800 ml-8">
+        <p class="font-semibold text-slate-100 text-sm mb-2">
             {% if item.type == 'news' %}Why this matters:{% else %}Summary:{% endif %}
         </p>
-        <div class="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap
+        <div class="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap
             {% if not is_hero and not is_featured %}line-clamp-4{% endif %}">
             {{ item.summary }}
         </div>

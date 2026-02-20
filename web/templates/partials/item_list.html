@@ -42,13 +42,16 @@
                 </div>
 
                 <!-- Meta info -->
-                <div class="mt-2 flex items-center gap-3 text-sm text-slate-400">
+                <div class="mt-2 flex items-center gap-3 text-sm text-slate-400 flex-wrap">
                     <span>{{ item.digest.date }}</span>
                     <span>&middot;</span>
                     {% if item.type == 'news' %}
                     <span class="truncate max-w-xs">{{ item.source }}</span>
                     {% else %}
                     <span>{{ item.show_name }}</span>
+                    {% endif %}
+                    {% if item.cluster_label %}
+                    <span class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">{{ item.cluster_label }}</span>
                     {% endif %}
                 </div>
 

@@ -179,9 +179,10 @@ TOP STORIES:
 
     try {
         await navigator.clipboard.writeText(summary);
-        alert('Summary copied to clipboard!');
+        showToast('Summary copied to clipboard!');
     } catch (err) {
         console.error('Failed to copy:', err);
+        showToast('Failed to copy', 'error');
     }
 }
 </script>

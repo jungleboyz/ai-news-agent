@@ -75,25 +75,26 @@
 
                 <!-- Nav Links -->
                 <div id="nav-menu" class="hidden md:flex items-center gap-6 absolute md:static top-16 left-0 right-0 md:top-auto bg-cyber-dark md:bg-transparent border-b md:border-0 border-slate-800 p-4 md:p-0 flex-col md:flex-row z-50">
-                    <a href="/brief" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    {% set current_path = request.url.path %}
+                    <a href="/brief" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path == '/' or current_path.startswith('/brief') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         BRIEF
                     </a>
-                    <a href="/digests" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    <a href="/digests" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/digest') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         DIGESTS
                     </a>
-                    <a href="/topics" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    <a href="/topics" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/topic') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         TOPICS
                     </a>
-                    <a href="/search" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    <a href="/search" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/search') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         SEARCH
                     </a>
-                    <a href="/chat" class="cyber-nav-link text-sm font-medium tracking-wide text-neon-cyan w-full md:w-auto py-2 md:py-0">
+                    <a href="/chat" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/chat') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         CHAT
                     </a>
-                    <a href="/sources" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    <a href="/sources" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/source') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         SOURCES
                     </a>
-                    <a href="/preferences" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0">
+                    <a href="/preferences" class="cyber-nav-link text-sm font-medium tracking-wide w-full md:w-auto py-2 md:py-0 {% if current_path.startswith('/preference') %}text-neon-cyan border-b-2 border-neon-cyan{% endif %}">
                         PREFS
                     </a>
                 </div>
@@ -138,8 +139,31 @@
         </div>
     </footer>
 
-    <!-- Interaction tracking script -->
+    <!-- Toast notification container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <!-- Scripts -->
     <script>
+        // Toast notification system
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const colors = {
+                success: 'border-neon-cyan text-neon-cyan',
+                error: 'border-red-500 text-red-400',
+                info: 'border-neon-magenta text-neon-magenta'
+            };
+            toast.className = `px-4 py-2.5 rounded-lg text-sm border bg-cyber-dark/95 backdrop-blur-sm ${colors[type] || colors.success} transform translate-x-full transition-transform duration-300`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-x-full'));
+            setTimeout(() => {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => toast.remove(), 300);
+            }, 2000);
+        }
+
+        // Interaction tracking
         async function trackInteraction(itemId, action) {
             try {
                 await fetch('/api/interactions', {
@@ -147,22 +171,49 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({item_id: itemId, action: action})
                 });
-
-                // Visual feedback for save/hide actions
-                if (action === 'save' || action === 'hide') {
-                    const indicator = document.createElement('div');
-                    indicator.className = 'fixed bottom-4 right-4 px-4 py-2 rounded-lg text-sm z-50 cyber-border';
-                    indicator.style.background = 'var(--bg-card)';
-                    indicator.innerHTML = action === 'save'
-                        ? '<span class="neon-text">SAVED</span>'
-                        : '<span class="text-neon-magenta">HIDDEN</span>';
-                    document.body.appendChild(indicator);
-                    setTimeout(() => indicator.remove(), 1500);
-                }
+                if (action === 'save') showToast('Saved for later');
+                if (action === 'hide') showToast('Hidden', 'info');
             } catch (error) {
                 console.error('Failed to track interaction:', error);
             }
         }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Skip if user is typing in an input/textarea/select
+            const tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
+
+            const cards = document.querySelectorAll('.item-card');
+            if (!cards.length) return;
+
+            if (e.key === 'j' || e.key === 'k') {
+                e.preventDefault();
+                const focused = document.querySelector('.item-card:focus');
+                let idx = focused ? Array.from(cards).indexOf(focused) : -1;
+                if (e.key === 'j') idx = Math.min(idx + 1, cards.length - 1);
+                if (e.key === 'k') idx = Math.max(idx - 1, 0);
+                cards[idx].focus();
+                cards[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            if (e.key === '/' ) {
+                const searchInput = document.getElementById('q');
+                if (searchInput) {
+                    e.preventDefault();
+                    searchInput.focus();
+                }
+            }
+
+            // Enter to open focused card's link
+            if (e.key === 'Enter') {
+                const focused = document.querySelector('.item-card:focus');
+                if (focused) {
+                    const link = focused.querySelector('a[href]');
+                    if (link) link.click();
+                }
+            }
+        });
     </script>
 </body>
 </html>
