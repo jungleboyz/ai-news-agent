@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, text
+from sqlalchemy import desc
 
 from web.database import get_db
 from web.models import Digest, Item
@@ -49,22 +49,12 @@ async def search_results(
     # Build query
     query = db.query(Item).join(Digest)
 
-    # Full-text search using FTS5
+    # Full-text search
     if q and q.strip():
-        # Use FTS5 for full-text search
-        fts_query = text("""
-            SELECT rowid FROM items_fts WHERE items_fts MATCH :query
-        """)
-        fts_results = db.execute(fts_query, {"query": q.strip()}).fetchall()
-        matching_ids = [row[0] for row in fts_results]
-        if matching_ids:
-            query = query.filter(Item.id.in_(matching_ids))
-        else:
-            # Fallback to LIKE search if FTS returns nothing
-            search_term = f"%{q.strip()}%"
-            query = query.filter(
-                (Item.title.ilike(search_term)) | (Item.summary.ilike(search_term))
-            )
+        search_term = f"%{q.strip()}%"
+        query = query.filter(
+            (Item.title.ilike(search_term)) | (Item.summary.ilike(search_term))
+        )
 
     # Date range filter
     if date_from:
