@@ -285,8 +285,10 @@ class EmbeddingService:
             return []
 
         last_error = None
+        print(f"Cascade: {len(self._providers)} providers configured: {[p.name for p in self._providers]}")
         for provider in self._providers:
             if not provider.available:
+                print(f"Embedding provider {provider.name} not available, skipping")
                 continue
             try:
                 result = provider.batch_embed(texts, batch_size=batch_size)
