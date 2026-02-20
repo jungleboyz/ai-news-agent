@@ -263,7 +263,7 @@ async def api_rebuild_clusters(
     return {"status": "started", "days": days or "all"}
 
 
-@router.get("/api/digests/audit")
+@router.get("/api/admin/digests/audit")
 async def api_digest_audit(
     db: Session = Depends(get_db),
 ):
@@ -294,7 +294,7 @@ async def api_digest_audit(
     }
 
 
-@router.delete("/api/digests/empty")
+@router.delete("/api/admin/digests/empty")
 async def api_delete_empty_digests(
     db: Session = Depends(get_db),
 ):
