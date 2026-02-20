@@ -17,7 +17,7 @@ from services.semantic_scorer import SemanticScorer
 # --- Config ---
 SOURCES_FILE = "sources.txt"
 OUT_DIR = "out"
-DIGEST_TOP_N = 10
+DIGEST_TOP_N = None  # No limit — capture everything from sources
 SEEN_PATH = os.path.join(OUT_DIR, "seen.json")
 SUMMARIES_PATH = os.path.join(OUT_DIR, "summaries.json")
 CHROMADB_DIR = "chromadb_data"
@@ -291,16 +291,16 @@ def check_duplicates(items: List[dict], item_type: str = "news", threshold: floa
         return items
 
 
-def fetch_rss_items(feed_url: str, limit: int = 10) -> List[dict]:
+def fetch_rss_items(feed_url: str) -> List[dict]:
     """
-    Fetch RSS items from a single feed URL.
+    Fetch all RSS items from a single feed URL.
     Returns a list of dicts with title + link.
     """
     try:
         feed = feedparser.parse(feed_url)
 
         items = []
-        for entry in feed.entries[:limit]:
+        for entry in feed.entries:
             title = getattr(entry, "title", "").strip()
             link = getattr(entry, "link", "").strip()
             if title and link:
@@ -385,7 +385,7 @@ def run_agent() -> str:
 
     all_items = []
     for src in sources:
-        items = fetch_rss_items(src, limit=15)
+        items = fetch_rss_items(src)
         if items:
             print(f"  ✓ {src}: {len(items)} items")
         for it in items:
@@ -415,29 +415,14 @@ def run_agent() -> str:
     # Sort by score desc
     fresh.sort(key=lambda x: x["score"], reverse=True)
 
-    # Keep top N, but also avoid "all from one source" dominance (light diversity)
     picked = []
     if len(fresh) == 0:
         print("⚠ No fresh news items found - all items have been seen already")
         print("   (Delete out/seen.json to reset and see all items again)")
-    per_source_cap = 4
-    per_source_count = {}
     summaries_updated = False
 
     # Batch pre-fetch article content via Firecrawl (if available)
-    # Collect candidate URLs first (respecting per-source cap)
-    candidate_urls = []
-    _temp_source_count = {}
-    for it in fresh:
-        src = it["source"]
-        _temp_source_count[src] = _temp_source_count.get(src, 0)
-        if _temp_source_count[src] >= per_source_cap:
-            continue
-        if it["link"] not in summaries_cache:
-            candidate_urls.append(it["link"])
-        _temp_source_count[src] += 1
-        if sum(1 for v in _temp_source_count.values() if v > 0) >= DIGEST_TOP_N * 2:
-            break
+    candidate_urls = [it["link"] for it in fresh if it["link"] not in summaries_cache]
 
     if candidate_urls:
         try:
@@ -454,13 +439,6 @@ def run_agent() -> str:
             print(f"  ⚠ Batch pre-fetch failed: {e}")
 
     for it in fresh:
-        # Keep keyword matches first, but allow fallback items too
-        src = it["source"]
-        per_source_count[src] = per_source_count.get(src, 0)
-
-        if per_source_count[src] >= per_source_cap:
-            continue
-
         # Check cache first
         article_url = it["link"]
         if article_url in summaries_cache:
@@ -478,11 +456,7 @@ def run_agent() -> str:
             summaries_updated = True
 
         picked.append(it)
-        per_source_count[src] += 1
         seen[it["id"]] = now
-
-        if len(picked) >= DIGEST_TOP_N:
-            break
 
     save_seen(seen)
     if summaries_updated:
