@@ -188,7 +188,7 @@ async def chat(
     conversation_manager.add_message(conversation_id, user_message)
 
     # Get response
-    response = service.chat(chat_request.message, history)
+    response = service.chat(chat_request.message, history, db=db)
 
     # Add assistant response to history
     conversation_manager.add_message(conversation_id, response)
@@ -231,7 +231,7 @@ async def chat_stream(
 
         try:
             # Stream response
-            generator = service.chat_stream(message, history)
+            generator = service.chat_stream(message, history, db=db)
 
             for chunk in generator:
                 if isinstance(chunk, dict):

@@ -1,5 +1,6 @@
 """RAG (Retrieval Augmented Generation) and Chat service."""
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Generator, Optional
@@ -24,6 +25,88 @@ class ChatMessage:
             self.sources = []
 
 
+def _extract_keywords(query: str) -> list[str]:
+    """Extract meaningful keywords from a user query for DB search."""
+    # Common stop words to filter out
+    stop_words = {
+        "what", "which", "where", "when", "how", "who", "why", "is", "are",
+        "was", "were", "the", "a", "an", "in", "on", "at", "to", "for",
+        "of", "with", "by", "from", "about", "any", "can", "do", "does",
+        "did", "has", "have", "had", "me", "my", "tell", "show", "give",
+        "find", "get", "latest", "recent", "new", "news", "today", "week",
+        "this", "that", "there", "it", "its", "and", "or", "but", "not",
+        "all", "some", "most", "been", "being", "will", "would", "could",
+        "should", "happening", "going", "up", "top",
+    }
+    # Split on non-alphanumeric, keep meaningful words
+    words = re.findall(r'[a-zA-Z0-9]+', query.lower())
+    keywords = [w for w in words if w not in stop_words and len(w) > 1]
+    return keywords
+
+
+def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
+    """Search for items in PostgreSQL using keyword matching.
+
+    Falls back to recent items if no keyword matches found.
+    """
+    from sqlalchemy import desc, or_, func
+    from web.models import Item, Digest
+
+    keywords = _extract_keywords(query)
+
+    if keywords:
+        # Build ILIKE conditions for each keyword against title and summary
+        conditions = []
+        for kw in keywords:
+            pattern = f"%{kw}%"
+            conditions.append(Item.title.ilike(pattern))
+            conditions.append(Item.summary.ilike(pattern))
+
+        # Query items matching any keyword, ordered by recency and score
+        items = (
+            db.query(Item)
+            .join(Digest)
+            .filter(or_(*conditions))
+            .order_by(desc(Digest.date), desc(Item.score))
+            .limit(limit)
+            .all()
+        )
+    else:
+        items = []
+
+    # If no keyword matches, return recent high-scoring items
+    if not items:
+        items = (
+            db.query(Item)
+            .join(Digest)
+            .order_by(desc(Digest.date), desc(Item.score))
+            .limit(limit)
+            .all()
+        )
+
+    # Convert to the same format as vector store results
+    results = []
+    for item in items:
+        # Calculate a simple relevance score based on keyword matches
+        text = f"{item.title} {item.summary or ''}".lower()
+        match_count = sum(1 for kw in keywords if kw in text) if keywords else 0
+
+        results.append({
+            "metadata": {
+                "title": item.title,
+                "type": item.type,
+                "source": item.source or "",
+                "score": item.score,
+                "link": item.link,
+                "date": str(item.digest.date) if item.digest else "",
+            },
+            "text": item.summary or item.title,
+            "similarity": min(match_count / max(len(keywords), 1), 1.0) if keywords else 0.5,
+        })
+
+    return results
+
+
 class ChatRAGService:
     """Service for RAG-based chat about AI news."""
 
@@ -36,7 +119,7 @@ class ChatRAGService:
 
 When answering:
 - Be concise but informative
-- Cite specific sources when referencing news items
+- Cite specific sources when referencing news items (include the source name and date)
 - Acknowledge uncertainty when information is limited
 - Focus on facts from the provided context
 
@@ -71,20 +154,30 @@ You have access to retrieved news items that are relevant to the user's question
         query: str,
         limit: int = 10,
         item_type: Optional[str] = None,
+        db=None,
     ) -> list[dict]:
-        """Retrieve relevant items from the vector store."""
-        if not self.vector_store:
-            return []
+        """Retrieve relevant items, trying vector store first then falling back to DB."""
+        # Try vector store first
+        if self.vector_store:
+            try:
+                results = self.vector_store.search(
+                    query_text=query,
+                    item_type=item_type,
+                    limit=limit,
+                )
+                if results:
+                    return results
+            except Exception:
+                pass
 
-        try:
-            results = self.vector_store.search(
-                query_text=query,
-                item_type=item_type,
-                limit=limit,
-            )
-            return results
-        except Exception:
-            return []
+        # Fall back to PostgreSQL keyword search
+        if db is not None:
+            try:
+                return _search_items_in_db(db, query, limit=limit)
+            except Exception:
+                pass
+
+        return []
 
     def _format_context(self, items: list[dict]) -> str:
         """Format retrieved items as context for the prompt."""
@@ -98,8 +191,8 @@ You have access to retrieved news items that are relevant to the user's question
             formatted.append(f"\n[{i}] {metadata.get('title', 'Untitled')}")
             formatted.append(f"    Type: {metadata.get('type', 'news')}")
             formatted.append(f"    Source: {metadata.get('source', 'Unknown')}")
-            formatted.append(f"    Score: {metadata.get('score', 0)}")
-            formatted.append(f"    Relevance: {item.get('similarity', 0):.2f}")
+            formatted.append(f"    Date: {metadata.get('date', 'Unknown')}")
+            formatted.append(f"    Link: {metadata.get('link', '')}")
 
             text = item.get("text", "")
             if text:
@@ -115,18 +208,9 @@ You have access to retrieved news items that are relevant to the user's question
         message: str,
         conversation_history: list[ChatMessage] = None,
         max_tokens: int = 1000,
+        db=None,
     ) -> ChatMessage:
-        """
-        Process a chat message and return a response.
-
-        Args:
-            message: User's message
-            conversation_history: Previous messages in the conversation
-            max_tokens: Maximum tokens in response
-
-        Returns:
-            ChatMessage with the assistant's response and sources
-        """
+        """Process a chat message and return a response."""
         if not self.client:
             return ChatMessage(
                 role="assistant",
@@ -135,7 +219,7 @@ You have access to retrieved news items that are relevant to the user's question
             )
 
         # Retrieve relevant context
-        context_items = self.retrieve_context(message, limit=8)
+        context_items = self.retrieve_context(message, limit=8, db=db)
         context_text = self._format_context(context_items)
 
         # Build messages
@@ -175,6 +259,7 @@ Please answer based on the retrieved context. If the context doesn't contain rel
                     "title": metadata.get("title", "Untitled"),
                     "source": metadata.get("source", "Unknown"),
                     "type": metadata.get("type", "news"),
+                    "link": metadata.get("link", ""),
                     "similarity": item.get("similarity", 0),
                 })
 
@@ -196,18 +281,15 @@ Please answer based on the retrieved context. If the context doesn't contain rel
         message: str,
         conversation_history: list[ChatMessage] = None,
         max_tokens: int = 1000,
+        db=None,
     ) -> Generator[str, None, dict]:
-        """
-        Stream a chat response.
-
-        Yields text chunks, then returns metadata dict with sources.
-        """
+        """Stream a chat response. Yields text chunks, then returns metadata."""
         if not self.client:
             yield "Chat is not available. Please configure ANTHROPIC_API_KEY."
             return {"sources": []}
 
         # Retrieve relevant context
-        context_items = self.retrieve_context(message, limit=8)
+        context_items = self.retrieve_context(message, limit=8, db=db)
         context_text = self._format_context(context_items)
 
         # Build messages
@@ -247,6 +329,7 @@ Please answer based on the retrieved context. If the context doesn't contain rel
                     "title": metadata.get("title", "Untitled"),
                     "source": metadata.get("source", "Unknown"),
                     "type": metadata.get("type", "news"),
+                    "link": metadata.get("link", ""),
                     "similarity": item.get("similarity", 0),
                 })
 
