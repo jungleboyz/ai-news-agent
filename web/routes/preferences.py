@@ -64,11 +64,14 @@ class InteractionResponse(BaseModel):
 @router.get("/preferences", response_class=HTMLResponse)
 async def preferences_page(
     request: Request,
-    response: Response,
     db: Session = Depends(get_db),
 ):
     """Render preferences management page."""
-    user_id = get_or_create_user_id(request, response)
+    user_id = request.cookies.get(USER_ID_COOKIE)
+    new_user = not user_id
+    if not user_id:
+        user_id = str(uuid.uuid4())
+
     service = get_personalization_service()
 
     # Ensure user exists and has default presets
@@ -107,7 +110,7 @@ async def preferences_page(
             })
 
     templates = request.app.state.templates
-    return templates.TemplateResponse(
+    resp = templates.TemplateResponse(
         "preferences.html",
         {
             "request": request,
@@ -117,6 +120,19 @@ async def preferences_page(
             "user_id": user_id[:8] + "...",
         },
     )
+
+    # Set cookie directly on the template response so it's actually sent
+    if new_user:
+        resp.set_cookie(
+            key=USER_ID_COOKIE,
+            value=user_id,
+            max_age=COOKIE_MAX_AGE,
+            httponly=True,
+            samesite="lax",
+            secure=settings.is_production,
+        )
+
+    return resp
 
 
 @router.post("/api/interactions", response_model=InteractionResponse)
