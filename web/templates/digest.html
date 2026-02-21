@@ -81,6 +81,106 @@
         </div>
     </header>
 
+    <!-- For You Section -->
+    {% if for_you_items %}
+    <section class="mb-10">
+        <div class="flex items-center gap-3 mb-5">
+            <div class="h-px flex-1 bg-gradient-to-r from-transparent via-neon-magenta/40 to-transparent"></div>
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-neon-magenta px-4 py-1.5 rounded-full bg-neon-magenta/10 border border-neon-magenta/30 flex items-center gap-2">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                </svg>
+                For You
+                <span class="text-xs text-slate-400 font-normal">({{ active_preset_name }})</span>
+            </h3>
+            <div class="h-px flex-1 bg-gradient-to-l from-transparent via-neon-magenta/40 to-transparent"></div>
+        </div>
+        <div class="space-y-4">
+            {% for entry in for_you_items %}
+            {% set item = entry.item %}
+            {% set match_count = entry.match_count %}
+            <article class="relative rounded-lg border p-6 shadow-sm transition-colors item-card
+                border-neon-magenta/30 bg-gradient-to-br from-slate-900 via-slate-900/90 to-fuchsia-950/20 hover:border-neon-magenta/50"
+                data-item-id="{{ item.id }}" tabindex="0">
+
+                <!-- Action buttons -->
+                <div class="absolute top-3 right-3 flex items-center gap-2">
+                    <button onclick="trackInteraction({{ item.id }}, 'save')" title="Save for later"
+                        class="p-1.5 rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors opacity-60 hover:opacity-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                    </button>
+                    <span class="px-2 py-1 text-xs font-bold uppercase tracking-wide rounded-md bg-neon-magenta/20 text-neon-magenta border border-neon-magenta/30">
+                        {{ match_count }} match{{ 'es' if match_count != 1 }}
+                    </span>
+                </div>
+
+                <div class="flex items-start gap-3 mb-3">
+                    <span class="text-sm font-mono flex-shrink-0 text-neon-magenta font-bold">
+                        {{ loop.index }}.
+                    </span>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            {% if item.type == 'news' %}
+                            <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">News</span>
+                            {% elif item.type == 'podcast' %}
+                            <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">Podcast</span>
+                            {% elif item.type == 'web' %}
+                            <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">Web</span>
+                            {% else %}
+                            <span class="text-xs text-slate-400 uppercase px-1.5 py-0.5 bg-slate-800/80 rounded">Video</span>
+                            {% endif %}
+                            {% if item.cluster_label %}
+                            <span class="px-2 py-0.5 text-xs rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                                {{ item.cluster_label }}
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <h2 class="text-lg font-semibold leading-tight pr-24">
+                            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer"
+                               onclick="trackInteraction({{ item.id }}, 'click')"
+                               class="text-slate-50 hover:text-neon-magenta transition-colors">
+                                {{ item.title }}
+                            </a>
+                        </h2>
+
+                        <div class="mt-2 flex items-center gap-2 text-sm text-slate-400">
+                            {% if item.type == 'podcast' %}
+                            <span>{{ item.show_name }}</span>
+                            {% else %}
+                            <span>{{ item.source }}</span>
+                            {% endif %}
+                            <span class="text-slate-600">&middot;</span>
+                            {% set domain = item.link.split('//')[1].split('/')[0] if '//' in item.link else item.link %}
+                            <a href="{{ item.link }}" target="_blank" rel="noopener noreferrer"
+                               class="text-blue-400 hover:text-blue-300 transition-colors truncate max-w-xs">
+                                {{ domain }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                {% if item.summary %}
+                <div class="mt-4 pt-4 border-t border-slate-800/50 ml-8">
+                    <div class="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap line-clamp-3">
+                        {{ item.summary }}
+                    </div>
+                    {% if item.summary|length > 200 %}
+                    <button onclick="this.previousElementSibling.classList.remove('line-clamp-3'); this.remove();"
+                        class="mt-2 text-xs text-neon-magenta hover:underline">
+                        Read more
+                    </button>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
     <!-- Items (grouped by cluster if available) -->
     {% if clustered_items %}
     <section class="space-y-10">

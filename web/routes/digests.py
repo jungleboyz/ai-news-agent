@@ -1,16 +1,70 @@
 """Digest list and detail view routes."""
+import json
+import re
 from collections import OrderedDict
 from datetime import date
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from web.database import get_db
-from web.models import Digest, Item
+from web.models import Digest, Item, UserProfile, PreferencePreset
 
 router = APIRouter()
+
+FOR_YOU_LIMIT = 10  # Max items in the "For You" section
+
+
+def _get_active_preset(db: Session, request: Request) -> Optional[PreferencePreset]:
+    """Get the user's active preference preset from their cookie, if any."""
+    user_id = request.cookies.get("user_id")
+    if not user_id:
+        return None
+    preset = (
+        db.query(PreferencePreset)
+        .filter(
+            PreferencePreset.user_id == user_id,
+            PreferencePreset.is_active == True,
+        )
+        .first()
+    )
+    return preset
+
+
+def _score_item_for_preset(item: Item, interests: List[str]) -> int:
+    """Score a digest item against a list of interest keywords. Returns match count."""
+    text = f"{item.title} {item.summary or ''} {item.source or ''} {item.cluster_label or ''}".lower()
+    text = re.sub(r"\s+", " ", text)
+    score = 0
+    for interest in interests:
+        kw = interest.lower().strip()
+        if kw and kw in text:
+            score += 1
+    return score
+
+
+def _get_for_you_items(
+    items: List[Item], preset: PreferencePreset, limit: int = FOR_YOU_LIMIT
+) -> List[dict]:
+    """Score and rank digest items against the active preset's interests.
+
+    Returns list of {"item": Item, "match_count": int} sorted by match count desc.
+    Only includes items with at least 1 match.
+    """
+    interests = json.loads(preset.interests) if preset.interests else []
+    if not interests:
+        return []
+
+    scored = []
+    for item in items:
+        match_count = _score_item_for_preset(item, interests)
+        if match_count > 0:
+            scored.append({"item": item, "match_count": match_count})
+
+    scored.sort(key=lambda x: x["match_count"], reverse=True)
+    return scored[:limit]
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -136,6 +190,14 @@ async def digest_detail(
     if unclustered:
         clustered_items["Other Stories"] = unclustered
 
+    # "For You" section based on active preset
+    for_you_items = []
+    active_preset_name = None
+    preset = _get_active_preset(db, request)
+    if preset:
+        active_preset_name = preset.name
+        for_you_items = _get_for_you_items(items, preset)
+
     return request.app.state.templates.TemplateResponse(
         "digest.html",
         {
@@ -144,6 +206,8 @@ async def digest_detail(
             "items": items,
             "clustered_items": clustered_items if has_clusters else {},
             "prev_digest": prev_digest,
-            "next_digest": next_digest
+            "next_digest": next_digest,
+            "for_you_items": for_you_items,
+            "active_preset_name": active_preset_name,
         }
     )
