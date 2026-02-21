@@ -41,13 +41,17 @@ def set_article_cache(cache: dict[str, str]) -> None:
     _article_cache = cache
 
 
-def fetch_article_text(url):
-    """Fetch article text with cascade: cache → Firecrawl → BeautifulSoup."""
+def fetch_article_text(url, rss_summary=None):
+    """Fetch article text with cascade: cache → RSS summary → Firecrawl → BeautifulSoup."""
     # 1. Check batch pre-fetch cache
     if url in _article_cache:
         return _article_cache[url]
 
-    # 2. Try Firecrawl
+    # 2. Use RSS summary if substantial (>100 chars, not just a teaser)
+    if rss_summary and len(rss_summary.strip()) > 100:
+        return rss_summary.strip()[:4000]
+
+    # 3. Try Firecrawl
     try:
         from services.firecrawl_service import get_firecrawl_service
         fc = get_firecrawl_service()
@@ -58,7 +62,7 @@ def fetch_article_text(url):
     except Exception:
         pass
 
-    # 3. Fall back to BeautifulSoup
+    # 4. Fall back to BeautifulSoup
     try:
         html = requests.get(url, timeout=5).text
         soup = BeautifulSoup(html, "html.parser")
@@ -74,7 +78,7 @@ def generate_fallback_summary(url, title=""):
         return f"This article about '{title}' may be relevant to your interests. Click the link to read more."
     return "This article may be relevant to your interests. Click the link to read more."
 
-def summarize_article(url, title=""):
+def summarize_article(url, title="", rss_summary=None):
     """
     Summarize an article using OpenAI API.
     Returns None if API key is not configured (caller should use fallback).
@@ -85,8 +89,8 @@ def summarize_article(url, title=""):
     if client is None:
         # Return None to indicate fallback should be used
         return None
-    
-    content = fetch_article_text(url)
+
+    content = fetch_article_text(url, rss_summary=rss_summary)
     if content is None:
         # Failed to fetch article text
         return None

@@ -17,7 +17,8 @@ from services.semantic_scorer import SemanticScorer
 # --- Config ---
 SOURCES_FILE = "sources.txt"
 OUT_DIR = "out"
-DIGEST_TOP_N = None  # No limit — capture everything from sources
+DIGEST_TOP_N = None  # No overall digest limit
+PER_SOURCE_CAP = 10  # Max items per RSS feed (most recent)
 SEEN_PATH = os.path.join(OUT_DIR, "seen.json")
 SUMMARIES_PATH = os.path.join(OUT_DIR, "summaries.json")
 CHROMADB_DIR = "chromadb_data"
@@ -291,10 +292,10 @@ def check_duplicates(items: List[dict], item_type: str = "news", threshold: floa
         return items
 
 
-def fetch_rss_items(feed_url: str) -> List[dict]:
+def fetch_rss_items(feed_url: str, limit: int = PER_SOURCE_CAP) -> List[dict]:
     """
-    Fetch all RSS items from a single feed URL.
-    Returns a list of dicts with title + link.
+    Fetch RSS items from a single feed URL.
+    Returns the most recent `limit` items with title + link.
     """
     try:
         feed = feedparser.parse(feed_url)
@@ -307,6 +308,8 @@ def fetch_rss_items(feed_url: str) -> List[dict]:
                 summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
                 summary = re.sub(r"\s+", " ", summary).strip()
                 items.append({"title": title, "link": link, "summary": summary})
+                if limit and len(items) >= limit:
+                    break
 
         return items
     except Exception as e:
@@ -462,8 +465,8 @@ def run_agent() -> str:
         if article_url in summaries_cache:
             it["ai_summary"] = summaries_cache[article_url]
         else:
-            # Try to get summary from API
-            summary = summarize_article(article_url, it["title"])
+            # Try to get summary from API (pass RSS summary to avoid Firecrawl when possible)
+            summary = summarize_article(article_url, it["title"], rss_summary=it.get("summary"))
             if summary is None:
                 # Use fallback when API is unavailable
                 it["ai_summary"] = generate_fallback_summary(article_url, it["title"])

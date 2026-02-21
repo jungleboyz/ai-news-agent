@@ -27,10 +27,11 @@ class FirecrawlService:
             self._client = None
         else:
             self._client = FirecrawlApp(api_key=api_key)
+        self._quota_exhausted = False
 
     @property
     def available(self) -> bool:
-        return self._client is not None
+        return self._client is not None and not self._quota_exhausted
 
     def _extract_markdown(self, doc) -> str:
         """Extract markdown from a scrape result (handles dict or object)."""
@@ -64,6 +65,12 @@ class FirecrawlService:
                 return markdown[:max_length]
             return None
         except Exception as e:
+            error_msg = str(e)
+            if "Payment Required" in error_msg or "Insufficient credits" in error_msg:
+                if not self._quota_exhausted:
+                    print(f"  ⚠ Firecrawl credits exhausted — skipping remaining scrapes")
+                    self._quota_exhausted = True
+                return None
             print(f"  ⚠ Firecrawl scrape failed for {url}: {e}")
             return None
 
@@ -72,7 +79,7 @@ class FirecrawlService:
 
         URLs that fail are omitted from the result.
         """
-        if not self._client or not urls:
+        if not self._client or not urls or self._quota_exhausted:
             return {}
 
         results = {}
@@ -85,12 +92,20 @@ class FirecrawlService:
                 if source_url and markdown:
                     results[source_url] = markdown[:MAX_CONTENT_LENGTH]
         except Exception as e:
+            error_msg = str(e)
+            if "Payment Required" in error_msg or "Insufficient credits" in error_msg:
+                if not self._quota_exhausted:
+                    print(f"  ⚠ Firecrawl credits exhausted — skipping remaining scrapes")
+                    self._quota_exhausted = True
+                return results
             print(f"  ⚠ Firecrawl batch scrape failed: {e}")
             # Fall back to individual scrapes
             for url in urls:
                 text = self.scrape_article(url)
                 if text:
                     results[url] = text
+                if self._quota_exhausted:
+                    break
 
         return results
 
