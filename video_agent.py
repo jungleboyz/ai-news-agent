@@ -382,6 +382,21 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
     from summarizer import summarize_podcast, generate_fallback_podcast_summary
 
     seen = load_seen_videos()
+
+    # Merge DB-backed seen video IDs to survive container restarts
+    try:
+        from web.db_writer import get_seen_links_from_db
+        db_links = get_seen_links_from_db(days=30)
+        # Extract YouTube video IDs from stored links
+        import re as _re
+        for link in db_links:
+            m = _re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', link)
+            if m:
+                seen.add(m.group(1))
+        print(f"🔄 Video seen cache: {len(seen)} total (including DB)")
+    except Exception as e:
+        print(f"  ⚠ DB dedup check skipped: {e}")
+
     processed = []
 
     print(f"📹 Processing {len(videos)} videos for AI content...")

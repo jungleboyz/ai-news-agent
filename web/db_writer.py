@@ -1,10 +1,69 @@
 """Helper functions to write digest data to the database."""
 import hashlib
-from datetime import date
-from typing import List, Dict, Optional
+from datetime import date, timedelta
+from typing import List, Dict, Optional, Set
 
 from web.database import SessionLocal, init_db
 from web.models import Digest, Item
+
+
+def get_seen_hashes_from_db(days: int = 30, item_type: str = None) -> Set[str]:
+    """Load item hashes from the database for deduplication.
+
+    Returns a set of item_hash values from digests in the last N days.
+    This ensures items don't repeat across days even if the file-based
+    seen cache (out/seen.json) is wiped by a container restart.
+
+    Args:
+        days: How many days back to check (default 30).
+        item_type: Optional filter by type ("news", "podcast", "video", "web").
+    """
+    try:
+        init_db()
+        db = SessionLocal()
+        try:
+            cutoff = date.today() - timedelta(days=days)
+            today = date.today()
+            query = (
+                db.query(Item.item_hash)
+                .join(Digest)
+                .filter(Digest.date >= cutoff, Digest.date < today)
+            )
+            if item_type:
+                query = query.filter(Item.type == item_type)
+            rows = query.all()
+            return {row[0] for row in rows}
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"  ⚠ Could not load seen hashes from DB: {e}")
+        return set()
+
+
+def get_seen_links_from_db(days: int = 30) -> Set[str]:
+    """Load item links from the database for cross-source deduplication.
+
+    Returns a set of link URLs from digests in the last N days,
+    excluding today so that re-runs can regenerate today's digest.
+    """
+    try:
+        init_db()
+        db = SessionLocal()
+        try:
+            cutoff = date.today() - timedelta(days=days)
+            today = date.today()
+            rows = (
+                db.query(Item.link)
+                .join(Digest)
+                .filter(Digest.date >= cutoff, Digest.date < today)
+                .all()
+            )
+            return {row[0] for row in rows}
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"  ⚠ Could not load seen links from DB: {e}")
+        return set()
 
 
 def save_digest_to_db(

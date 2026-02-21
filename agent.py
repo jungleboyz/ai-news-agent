@@ -356,6 +356,21 @@ def run_agent() -> str:
     summaries_cache = load_summaries()
     now = time.time()
 
+    # Merge DB-backed seen hashes to survive container restarts
+    try:
+        from web.db_writer import get_seen_hashes_from_db
+        db_hashes = get_seen_hashes_from_db(days=30)
+        if db_hashes:
+            merged = 0
+            for h in db_hashes:
+                if h not in seen:
+                    seen[h] = now  # Add with current timestamp
+                    merged += 1
+            if merged:
+                print(f"🔄 Loaded {merged} previously seen hashes from database")
+    except Exception as e:
+        print(f"  ⚠ DB dedup check skipped: {e}")
+
     sources = load_sources()
     print(f"📰 Processing {len(sources)} news sources...")
     
@@ -547,7 +562,13 @@ def run_agent() -> str:
         })
 
     # Deduplicate by link across all item types (news, podcast, video, web)
-    seen_links = set()
+    # Also check against DB links from previous digests
+    try:
+        from web.db_writer import get_seen_links_from_db
+        seen_links = get_seen_links_from_db(days=14)
+        print(f"🔄 Loaded {len(seen_links)} links from recent digests for cross-day dedup")
+    except Exception:
+        seen_links = set()
     deduped_items = []
     for item in all_digest_items:
         if item["link"] not in seen_links:

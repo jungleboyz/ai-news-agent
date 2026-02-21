@@ -330,7 +330,22 @@ def run_podcast_agent(skip_transcription: bool = None) -> List[dict]:
     transcripts_cache = load_podcast_transcripts()
     summaries_cache = load_podcast_summaries()
     now = time.time()
-    
+
+    # Merge DB-backed seen hashes to survive container restarts
+    try:
+        from web.db_writer import get_seen_hashes_from_db
+        db_hashes = get_seen_hashes_from_db(days=30, item_type="podcast")
+        if db_hashes:
+            merged = 0
+            for h in db_hashes:
+                if h not in seen:
+                    seen[h] = now
+                    merged += 1
+            if merged:
+                print(f"🔄 Loaded {merged} previously seen podcast hashes from database")
+    except Exception as e:
+        print(f"  ⚠ DB dedup check skipped: {e}")
+
     feeds = load_podcast_feeds()
     if not feeds:
         print("⚠ No podcast feeds found in podcasts.txt")

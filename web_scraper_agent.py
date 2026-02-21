@@ -239,6 +239,21 @@ def run_web_scraper_agent() -> List[dict]:
     summaries_cache = load_web_summaries()
     now = time.time()
 
+    # Merge DB-backed seen hashes to survive container restarts
+    try:
+        from web.db_writer import get_seen_hashes_from_db
+        db_hashes = get_seen_hashes_from_db(days=30, item_type="web")
+        if db_hashes:
+            merged = 0
+            for h in db_hashes:
+                if h not in seen:
+                    seen[h] = now
+                    merged += 1
+            if merged:
+                print(f"🔄 Loaded {merged} previously seen web hashes from database")
+    except Exception as e:
+        print(f"  ⚠ DB dedup check skipped: {e}")
+
     sources = load_web_sources()
     if not sources:
         print("⚠ No web sources found in web_sources.txt")
