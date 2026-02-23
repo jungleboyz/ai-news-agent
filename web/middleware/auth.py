@@ -12,8 +12,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from config import settings
 
 
-# Paths that don't require authentication
-PUBLIC_PATHS = {"/login", "/health", "/favicon.ico"}
+# Paths that require authentication (admin-only sections)
+PROTECTED_PATHS = {"/sources"}
+PROTECTED_PREFIXES = ("/api/feeds", "/api/sources")
+
+# Paths that are always accessible
+ALWAYS_PUBLIC = {"/login", "/health", "/favicon.ico"}
 PUBLIC_PREFIXES = ("/static/", "/cron/")
 
 # Session duration: 30 days
@@ -74,21 +78,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip auth for public paths
-        if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
-            return await call_next(request)
-
         # Skip auth if no SITE_PASSWORD is configured (dev mode)
         if not settings.site_password:
             return await call_next(request)
 
-        # Check session cookie
+        # Check if this path requires authentication
+        needs_auth = (
+            path in PROTECTED_PATHS
+            or any(path.startswith(p) for p in PROTECTED_PREFIXES)
+        )
+
+        # If path doesn't need auth, let it through
+        if not needs_auth:
+            return await call_next(request)
+
+        # Protected path — check session cookie
         session_cookie = request.cookies.get(SESSION_COOKIE)
         if session_cookie and verify_session_cookie(session_cookie):
             return await call_next(request)
 
-        # Not authenticated - redirect to login
-        # For API requests, return 401 instead of redirect
+        # Not authenticated — return 401 for API, redirect for pages
         if path.startswith("/api/"):
             return Response(
                 content=json.dumps({"detail": "Authentication required"}),
