@@ -458,9 +458,18 @@ def run_agent() -> str:
     summaries_updated = False
 
     # Batch pre-fetch article content via Firecrawl (if available)
-    candidate_urls = [it["link"] for it in fresh if it["link"] not in summaries_cache]
+    # Only pre-fetch articles that don't already have an RSS summary (saves credits)
+    candidate_urls = [
+        it["link"] for it in fresh
+        if it["link"] not in summaries_cache
+        and len(it.get("summary", "") or "") < 100  # Skip if RSS summary is good enough
+    ]
 
+    PREFETCH_LIMIT = 50  # Cap Firecrawl usage per run
     if candidate_urls:
+        if len(candidate_urls) > PREFETCH_LIMIT:
+            print(f"🔥 Capping Firecrawl pre-fetch to {PREFETCH_LIMIT} of {len(candidate_urls)} articles (saving credits)")
+            candidate_urls = candidate_urls[:PREFETCH_LIMIT]
         try:
             from services.firecrawl_service import get_firecrawl_service
             from summarizer import set_article_cache

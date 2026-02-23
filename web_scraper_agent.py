@@ -262,12 +262,22 @@ def run_web_scraper_agent() -> List[dict]:
     print(f"🌐 Processing {len(sources)} web sources via Firecrawl...")
 
     all_items = []
+    consecutive_failures = 0
     for i, listing_url in enumerate(sources):
         # Scrape listing page
         markdown = scrape_listing_page(listing_url)
         if not markdown:
+            consecutive_failures += 1
             print(f"  ✗ {listing_url}: scrape failed")
+            # If 5+ consecutive failures, Firecrawl is likely out of credits
+            if consecutive_failures >= 5:
+                from services.firecrawl_service import get_firecrawl_service
+                fc = get_firecrawl_service()
+                if not fc.available:
+                    print(f"  ⚠ Firecrawl unavailable — skipping remaining {len(sources) - i - 1} web sources")
+                    break
             continue
+        consecutive_failures = 0
 
         # Extract article links
         articles = extract_article_links(markdown, listing_url)
