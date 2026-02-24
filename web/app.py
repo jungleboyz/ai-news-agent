@@ -3,6 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime as dt, timezone
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, Request, Response
@@ -46,6 +47,17 @@ def _run_digest_job():
         print("Scheduler: digest run completed")
     except Exception as e:
         print(f"Scheduler: digest run failed: {e}")
+
+
+def _scheduler_event_listener(event):
+    """Log APScheduler job misfire and error events."""
+    if event.code == EVENT_JOB_MISSED:
+        print(
+            f"Scheduler WARNING: job '{event.job_id}' missed its scheduled run time. "
+            f"This typically means the process was busy or paused at the scheduled time."
+        )
+    elif event.code == EVENT_JOB_ERROR:
+        print(f"Scheduler ERROR: job '{event.job_id}' raised an exception: {event.exception}")
 
 
 def get_real_ip(request: Request) -> str:
@@ -99,7 +111,10 @@ async def lifespan(app: FastAPI):
             trigger=trigger,
             id=DIGEST_JOB_ID,
             replace_existing=True,
+            misfire_grace_time=900,  # 15 min window to still run if delayed
+            max_instances=1,
         )
+        scheduler.add_listener(_scheduler_event_listener, EVENT_JOB_MISSED | EVENT_JOB_ERROR)
         scheduler.start()
         job = scheduler.get_job(DIGEST_JOB_ID)
         print(f"Scheduler started, next run at {job.next_run_time}")
