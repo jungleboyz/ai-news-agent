@@ -32,6 +32,10 @@ class Settings:
     scheduler_cron_hour: int = int(os.getenv("SCHEDULER_HOUR", "20"))      # UTC hour (20 = 6 AM AEST)
     scheduler_cron_minute: int = int(os.getenv("SCHEDULER_MINUTE", "0"))
 
+    # Webshare proxy (for YouTube transcript fetching from cloud IPs)
+    webshare_proxy_username: Optional[str] = os.getenv("WEBSHARE_PROXY_USERNAME")
+    webshare_proxy_password: Optional[str] = os.getenv("WEBSHARE_PROXY_PASSWORD")
+
     # Database
     database_url: Optional[str] = os.getenv("DATABASE_URL")
 

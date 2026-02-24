@@ -29,8 +29,19 @@ try:
         VideoUnavailable
     )
     YOUTUBE_TRANSCRIPT_AVAILABLE = True
-    # Create a global API instance
-    _youtube_api = YouTubeTranscriptApi()
+    # Create a global API instance with optional Webshare proxy
+    from config import settings
+    if settings.webshare_proxy_username and settings.webshare_proxy_password:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+        _youtube_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=settings.webshare_proxy_username,
+                proxy_password=settings.webshare_proxy_password,
+            )
+        )
+        print("YouTube transcript API: using Webshare proxy")
+    else:
+        _youtube_api = YouTubeTranscriptApi()
 except ImportError:
     YOUTUBE_TRANSCRIPT_AVAILABLE = False
     _youtube_api = None
