@@ -29,6 +29,8 @@ class Settings:
     # Cron / Scheduler
     cron_secret: str = os.getenv("CRON_SECRET", "dev-cron-secret")
     scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
+    scheduler_cron_hour: int = int(os.getenv("SCHEDULER_HOUR", "20"))      # UTC hour (20 = 6 AM AEST)
+    scheduler_cron_minute: int = int(os.getenv("SCHEDULER_MINUTE", "0"))
 
     # Database
     database_url: Optional[str] = os.getenv("DATABASE_URL")

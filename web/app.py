@@ -1,7 +1,10 @@
 """FastAPI application entry point."""
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime as dt, timezone
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -23,6 +26,23 @@ from web.middleware.auth import (
 )
 from web.middleware.security import SecurityHeadersMiddleware
 from web.routes import digests, search, api, semantic_search, clusters, preferences, sources, chat
+
+
+# APScheduler instance (created once, started in lifespan)
+scheduler = BackgroundScheduler()
+
+DIGEST_JOB_ID = "daily_digest"
+
+
+def _run_digest_job():
+    """Job function called by APScheduler to run the digest pipeline."""
+    print(f"Scheduler: starting digest run at {dt.now(timezone.utc).isoformat()}")
+    try:
+        from agent import run_agent
+        run_agent()
+        print("Scheduler: digest run completed")
+    except Exception as e:
+        print(f"Scheduler: digest run failed: {e}")
 
 
 def get_real_ip(request: Request) -> str:
@@ -60,7 +80,32 @@ async def lifespan(app: FastAPI):
         print("Startup warning: DB init timed out after 20s — app will start anyway")
     except Exception as e:
         print(f"Startup warning: {e} — app will start anyway")
+
+    # Start APScheduler
+    if settings.scheduler_enabled:
+        trigger = CronTrigger(
+            hour=settings.scheduler_cron_hour,
+            minute=settings.scheduler_cron_minute,
+            timezone="UTC",
+        )
+        scheduler.add_job(
+            _run_digest_job,
+            trigger=trigger,
+            id=DIGEST_JOB_ID,
+            replace_existing=True,
+        )
+        scheduler.start()
+        job = scheduler.get_job(DIGEST_JOB_ID)
+        print(f"Scheduler started, next run at {job.next_run_time}")
+    else:
+        print("Scheduler disabled via SCHEDULER_ENABLED=false")
+
     yield
+
+    # Shutdown scheduler
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+        print("Scheduler shut down")
 
 
 def _auto_import_feeds():
@@ -251,8 +296,7 @@ async def cron_run_digest(request: Request):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
 
-    from datetime import datetime as dt
-    return {"status": "started", "time": dt.utcnow().isoformat()}
+    return {"status": "started", "time": dt.now(timezone.utc).isoformat()}
 
 
 @app.post("/cron/rebuild-clusters")
@@ -274,25 +318,41 @@ async def cron_rebuild_clusters(request: Request):
     loop = asyncio.get_event_loop()
     loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
 
-    from datetime import datetime as dt
-    return {"status": "started", "time": dt.utcnow().isoformat()}
+    return {"status": "started", "time": dt.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/admin/scheduler")
 async def get_scheduler_status():
     """Get scheduler status."""
-    return {"enabled": _scheduler_enabled}
+    job = scheduler.get_job(DIGEST_JOB_ID) if scheduler.running else None
+    next_run = None
+    if job and job.next_run_time:
+        next_run = job.next_run_time.isoformat()
+    return {
+        "enabled": _scheduler_enabled,
+        "running": scheduler.running,
+        "next_run": next_run,
+    }
 
 
 @app.post("/api/admin/scheduler")
 async def toggle_scheduler(request: Request):
-    """Toggle scheduler on/off."""
+    """Toggle scheduler on/off. Pauses/resumes the APScheduler job."""
     global _scheduler_enabled
     body = await request.json()
     if "enabled" in body:
         _scheduler_enabled = bool(body["enabled"])
     else:
         _scheduler_enabled = not _scheduler_enabled
+
+    if scheduler.running:
+        job = scheduler.get_job(DIGEST_JOB_ID)
+        if job:
+            if _scheduler_enabled:
+                job.resume()
+            else:
+                job.pause()
+
     return {"enabled": _scheduler_enabled}
 
 
