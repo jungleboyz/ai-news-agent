@@ -59,7 +59,7 @@ def _run_digest_job():
 
 
 def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str | None):
-    """Send a status report email after the digest pipeline finishes."""
+    """Send a status report email with daily brief after the digest pipeline finishes."""
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
@@ -74,6 +74,9 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
     # Gather digest stats from DB
     status = "SUCCESS" if error is None else "FAILED"
     stats_lines = []
+    brief_text = ""
+    brief_html = ""
+    digest_date = None
     try:
         from web.database import SessionLocal
         from web.models import Digest, Item
@@ -84,6 +87,7 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
                 Digest.date == date.today()
             ).first()
             if digest:
+                digest_date = digest.date
                 items = session.query(Item).filter(Item.digest_id == digest.id).all()
                 by_type: dict[str, list] = {}
                 for item in items:
@@ -97,14 +101,27 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
                 stats_lines.append("")
                 for item_type, type_items in sorted(by_type.items()):
                     stats_lines.append(f"  {item_type}: {len(type_items)} items")
-                stats_lines.append("")
 
-                # Top 5 items by score
-                top = sorted(items, key=lambda i: i.score or 0, reverse=True)[:5]
-                if top:
-                    stats_lines.append("Top stories:")
-                    for i, item in enumerate(top, 1):
-                        stats_lines.append(f"  {i}. [{item.score}] {item.title}")
+                # Generate daily brief summary
+                try:
+                    from services.daily_brief import DailyBriefService
+                    brief_service = DailyBriefService()
+                    summary = brief_service.get_or_generate_summary(
+                        session, digest_date=digest.date
+                    )
+                    if "error" not in summary:
+                        brief_text = brief_service.generate_brief_text(
+                            summary, digest.date
+                        )
+                        brief_html = brief_service.generate_brief_html(
+                            summary, digest.date
+                        )
+                        print("Scheduler: daily brief generated for status email")
+                    else:
+                        brief_text = f"\n(Brief generation failed: {summary['error']})\n"
+                except Exception as e:
+                    print(f"Scheduler: brief generation failed: {e}")
+                    brief_text = f"\n(Brief generation failed: {e})\n"
             else:
                 stats_lines.append("No digest found in database for today.")
     except Exception as e:
@@ -113,7 +130,7 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
     minutes = int(elapsed_seconds // 60)
     seconds = int(elapsed_seconds % 60)
 
-    body = f"""Neural Feed Digest — Status Report
+    status_block = f"""Neural Feed Digest — Status Report
 {'=' * 40}
 
 Status:   {status}
@@ -121,9 +138,14 @@ Started:  {started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}
 Duration: {minutes}m {seconds}s
 """
     if error:
-        body += f"\nError:\n  {error}\n"
+        status_block += f"\nError:\n  {error}\n"
 
-    body += f"\n{chr(10).join(stats_lines)}\n"
+    status_block += f"\n{chr(10).join(stats_lines)}\n"
+
+    # Plain text: status block + brief
+    plain_body = status_block
+    if brief_text:
+        plain_body += f"\n\n{brief_text}"
 
     subject = f"Neural Feed {'OK' if error is None else 'FAILED'} — {started_at.strftime('%b %d')}"
 
@@ -132,7 +154,19 @@ Duration: {minutes}m {seconds}s
         msg["From"] = os.getenv("FROM_EMAIL") or smtp_user
         msg["To"] = to_email
         msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
+        msg.attach(MIMEText(plain_body, "plain"))
+
+        # If we have the HTML brief, build an HTML email with status + brief
+        if brief_html:
+            status_html = status_block.replace("\n", "<br>\n")
+            html_body = (
+                f'<div style="font-family:monospace;font-size:13px;'
+                f'background:#0f172a;color:#94a3b8;padding:20px;'
+                f'border-radius:8px;margin-bottom:24px;">'
+                f'{status_html}</div>\n'
+                f'{brief_html}'
+            )
+            msg.attach(MIMEText(html_body, "html"))
 
         smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
