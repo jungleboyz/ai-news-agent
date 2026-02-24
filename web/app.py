@@ -40,13 +40,109 @@ DIGEST_JOB_ID = "daily_digest"
 
 def _run_digest_job():
     """Job function called by APScheduler to run the digest pipeline."""
-    print(f"Scheduler: starting digest run at {dt.now(timezone.utc).isoformat()}")
+    import time as _time
+
+    start = _time.monotonic()
+    started_at = dt.now(timezone.utc)
+    print(f"Scheduler: starting digest run at {started_at.isoformat()}")
+    error_msg = None
     try:
         from agent import run_agent
         run_agent()
         print("Scheduler: digest run completed")
     except Exception as e:
+        error_msg = str(e)
         print(f"Scheduler: digest run failed: {e}")
+
+    elapsed = _time.monotonic() - start
+    _send_digest_status_email(started_at, elapsed, error_msg)
+
+
+def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str | None):
+    """Send a status report email after the digest pipeline finishes."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    smtp_user = os.getenv("SMTP_USER") or os.getenv("SMTP_USERNAME")
+    smtp_pass = os.getenv("SMTP_PASSWORD")
+    to_email = os.getenv("EMAIL_TO") or os.getenv("FROM_EMAIL") or smtp_user
+    if not smtp_user or not smtp_pass or not to_email:
+        print("Scheduler: status email skipped (SMTP not configured)")
+        return
+
+    # Gather digest stats from DB
+    status = "SUCCESS" if error is None else "FAILED"
+    stats_lines = []
+    try:
+        from web.database import SessionLocal
+        from web.models import Digest, Item
+        from datetime import date
+
+        with SessionLocal() as session:
+            digest = session.query(Digest).filter(
+                Digest.date == date.today()
+            ).first()
+            if digest:
+                items = session.query(Item).filter(Item.digest_id == digest.id).all()
+                by_type: dict[str, list] = {}
+                for item in items:
+                    by_type.setdefault(item.type, []).append(item)
+
+                stats_lines.append(f"Digest date: {digest.date}")
+                stats_lines.append(f"News sources: {digest.news_sources_count}")
+                stats_lines.append(f"Podcast sources: {digest.podcast_sources_count}")
+                stats_lines.append(f"Items considered: {digest.total_items_considered}")
+                stats_lines.append(f"Items in digest: {len(items)}")
+                stats_lines.append("")
+                for item_type, type_items in sorted(by_type.items()):
+                    stats_lines.append(f"  {item_type}: {len(type_items)} items")
+                stats_lines.append("")
+
+                # Top 5 items by score
+                top = sorted(items, key=lambda i: i.score or 0, reverse=True)[:5]
+                if top:
+                    stats_lines.append("Top stories:")
+                    for i, item in enumerate(top, 1):
+                        stats_lines.append(f"  {i}. [{item.score}] {item.title}")
+            else:
+                stats_lines.append("No digest found in database for today.")
+    except Exception as e:
+        stats_lines.append(f"Could not query digest stats: {e}")
+
+    minutes = int(elapsed_seconds // 60)
+    seconds = int(elapsed_seconds % 60)
+
+    body = f"""Neural Feed Digest — Status Report
+{'=' * 40}
+
+Status:   {status}
+Started:  {started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}
+Duration: {minutes}m {seconds}s
+"""
+    if error:
+        body += f"\nError:\n  {error}\n"
+
+    body += f"\n{chr(10).join(stats_lines)}\n"
+
+    subject = f"Neural Feed {'OK' if error is None else 'FAILED'} — {started_at.strftime('%b %d')}"
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = os.getenv("FROM_EMAIL") or smtp_user
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        print(f"Scheduler: status email sent to {to_email}")
+    except Exception as e:
+        print(f"Scheduler: failed to send status email: {e}")
 
 
 def _scheduler_event_listener(event):
