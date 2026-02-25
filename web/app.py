@@ -39,8 +39,9 @@ DIGEST_JOB_ID = "daily_digest"
 
 
 def _run_digest_job():
-    """Job function called by APScheduler to run the digest pipeline."""
+    """Job function called by APScheduler (and /cron/run-digest) to run the digest pipeline."""
     import time as _time
+    import traceback as _tb
 
     start = _time.monotonic()
     started_at = dt.now(timezone.utc)
@@ -51,8 +52,8 @@ def _run_digest_job():
         run_agent()
         print("Scheduler: digest run completed")
     except Exception as e:
-        error_msg = str(e)
-        print(f"Scheduler: digest run failed: {e}")
+        error_msg = f"{e}\n{_tb.format_exc()}"
+        print(f"Scheduler: digest run failed:\n{_tb.format_exc()}")
 
     elapsed = _time.monotonic() - start
     _send_digest_status_email(started_at, elapsed, error_msg)
@@ -488,16 +489,14 @@ async def cron_run_digest(request: Request):
     if not _scheduler_enabled:
         return {"status": "skipped", "reason": "Scheduler disabled"}
 
-    # Run agent in background thread (non-blocking)
+    # Run agent in background thread (non-blocking) — use the same
+    # wrapper as the APScheduler job so errors are captured and a
+    # status email is always sent.
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
 
-    def _run():
-        from agent import run_agent
-        run_agent()
-
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run)
+    loop.run_in_executor(ThreadPoolExecutor(max_workers=1), _run_digest_job)
 
     return {"status": "started", "time": dt.now(timezone.utc).isoformat()}
 

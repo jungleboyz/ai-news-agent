@@ -53,8 +53,8 @@ def load_sources(path: str = SOURCES_FILE) -> List[str]:
             ).all()
             if urls:
                 return [u[0] for u in urls]
-    except Exception:
-        pass  # DB not available, fall back to file
+    except Exception as e:
+        print(f"⚠ load_sources: DB query failed ({e}), falling back to {path}")
 
     with open(path, "r", encoding="utf-8") as f:
         return [
@@ -164,6 +164,9 @@ def make_id(title: str, link: str) -> str:
 
 
 def run_agent() -> str:
+    global _quota_exceeded
+    _quota_exceeded = False  # Reset per-run so a previous quota hit doesn't persist
+
     from summarizer import summarize_article, generate_fallback_summary
     ensure_out_dir()
     seen = load_json(SEEN_PATH, {})
