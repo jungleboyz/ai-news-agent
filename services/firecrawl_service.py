@@ -1,4 +1,5 @@
 """Firecrawl SDK wrapper for article scraping and web search."""
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Optional
 
 from config import settings
@@ -13,6 +14,10 @@ except ImportError:
 
 # Max chars to return (matches existing summarizer input limit)
 MAX_CONTENT_LENGTH = 4000
+
+# Timeout for batch scrape calls (seconds) — prevents indefinite hangs
+BATCH_SCRAPE_TIMEOUT = 120
+SINGLE_SCRAPE_TIMEOUT = 30
 
 # Singleton instance
 _instance: Optional["FirecrawlService"] = None
@@ -59,19 +64,24 @@ class FirecrawlService:
         if not self._client:
             return None
         try:
-            doc = self._client.scrape(url, formats=["markdown"])
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(self._client.scrape, url, formats=["markdown"])
+                doc = future.result(timeout=SINGLE_SCRAPE_TIMEOUT)
             markdown = self._extract_markdown(doc)
             if markdown:
                 return markdown[:max_length]
+            return None
+        except FuturesTimeoutError:
+            print(f"  Firecrawl scrape timed out for {url}")
             return None
         except Exception as e:
             error_msg = str(e)
             if "Payment Required" in error_msg or "Insufficient credits" in error_msg:
                 if not self._quota_exhausted:
-                    print(f"  ⚠ Firecrawl credits exhausted — skipping remaining scrapes")
+                    print(f"  Firecrawl credits exhausted — skipping remaining scrapes")
                     self._quota_exhausted = True
                 return None
-            print(f"  ⚠ Firecrawl scrape failed for {url}: {e}")
+            print(f"  Firecrawl scrape failed for {url}: {e}")
             return None
 
     def batch_scrape(self, urls: list[str]) -> dict[str, str]:
@@ -84,21 +94,26 @@ class FirecrawlService:
 
         results = {}
         try:
-            docs = self._client.batch_scrape(urls, formats=["markdown"])
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(self._client.batch_scrape, urls, formats=["markdown"])
+                docs = future.result(timeout=BATCH_SCRAPE_TIMEOUT)
             for doc in docs:
                 meta = self._extract_metadata(doc)
                 source_url = meta.get("sourceURL", "") or meta.get("url", "")
                 markdown = self._extract_markdown(doc)
                 if source_url and markdown:
                     results[source_url] = markdown[:MAX_CONTENT_LENGTH]
+        except FuturesTimeoutError:
+            print(f"  Firecrawl batch scrape timed out after {BATCH_SCRAPE_TIMEOUT}s — skipping")
+            return results
         except Exception as e:
             error_msg = str(e)
             if "Payment Required" in error_msg or "Insufficient credits" in error_msg:
                 if not self._quota_exhausted:
-                    print(f"  ⚠ Firecrawl credits exhausted — skipping remaining scrapes")
+                    print(f"  Firecrawl credits exhausted — skipping remaining scrapes")
                     self._quota_exhausted = True
                 return results
-            print(f"  ⚠ Firecrawl batch scrape failed: {e}")
+            print(f"  Firecrawl batch scrape failed: {e}")
             # Fall back to individual scrapes
             for url in urls:
                 text = self.scrape_article(url)
