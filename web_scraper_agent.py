@@ -5,24 +5,15 @@ Follows the same pattern as podcast_agent.py and video_agent.py.
 """
 import os
 import re
-import json
 import hashlib
 import time
 from typing import List, Dict, Optional
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
 
-# Semantic scoring imports
-from services.embeddings import EmbeddingService
-from services.semantic_scorer import SemanticScorer
-
-# Legacy keyword list for fallback scoring
-USER_INTERESTS = [
-    "genai", "generative ai", "llm", "agent", "agents",
-    "openai", "anthropic", "gemini", "mistral", "claude",
-    "cursor", "copilot", "aider", "enterprise", "bank",
-    "marketing", "automation", "workflow", "funding", "acquisition"
-]
+from services.scoring_service import USE_SEMANTIC_SCORING, score_semantic
+from services.cache_service import load_json, save_json
+from services.feed_service import update_feed_statuses
 
 # --- Config ---
 WEB_SOURCES_FILE = "web_sources.txt"
@@ -31,17 +22,6 @@ WEB_SEEN_PATH = os.path.join(OUT_DIR, "web_seen.json")
 WEB_SUMMARIES_PATH = os.path.join(OUT_DIR, "web_summaries.json")
 MAX_LINKS_PER_PAGE = 15
 LISTING_CONTENT_LENGTH = 8000
-RATE_LIMIT_DELAY = 2.0  # seconds between listing page scrapes
-
-# Enable/disable semantic scoring
-USE_SEMANTIC_SCORING = True
-
-# Service singletons
-_semantic_scorer: Optional[SemanticScorer] = None
-_embedding_service: Optional[EmbeddingService] = None
-
-# Quota exceeded flag
-_quota_exceeded: bool = False
 
 # Skip patterns for link extraction (navigation, footer, meta links)
 _SKIP_PATTERNS = [
@@ -56,20 +36,6 @@ _SKIP_PATTERNS = [
 # Regex for markdown links: [Title](URL)
 MARKDOWN_LINK_RE = re.compile(r'\[([^\]]{10,200})\]\((https?://[^\)\s]+)\)')
 RELATIVE_LINK_RE = re.compile(r'\[([^\]]{10,200})\]\((/[^\)\s]+)\)')
-
-
-def get_embedding_service() -> EmbeddingService:
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-    return _embedding_service
-
-
-def get_semantic_scorer() -> SemanticScorer:
-    global _semantic_scorer
-    if _semantic_scorer is None:
-        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
-    return _semantic_scorer
 
 
 def ensure_out_dir() -> None:
@@ -101,61 +67,9 @@ def load_web_sources(path: str = WEB_SOURCES_FILE) -> List[str]:
         ]
 
 
-def load_web_seen() -> Dict[str, float]:
-    if not os.path.exists(WEB_SEEN_PATH):
-        return {}
-    with open(WEB_SEEN_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_web_seen(seen: Dict[str, float]) -> None:
-    with open(WEB_SEEN_PATH, "w", encoding="utf-8") as f:
-        json.dump(seen, f, indent=2)
-
-
-def load_web_summaries() -> Dict[str, str]:
-    if not os.path.exists(WEB_SUMMARIES_PATH):
-        return {}
-    with open(WEB_SUMMARIES_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_web_summaries(summaries: Dict[str, str]) -> None:
-    with open(WEB_SUMMARIES_PATH, "w", encoding="utf-8") as f:
-        json.dump(summaries, f, indent=2)
-
-
 def make_id(title: str, link: str) -> str:
     raw = f"{title}|{link}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
-
-
-def norm(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
-
-
-def score_item_keywords(title: str, summary: str = "") -> int:
-    text = norm(f"{title} {summary}")
-    return sum(2 for kw in USER_INTERESTS if kw in text)
-
-
-def score_item(title: str, summary: str = "") -> int:
-    global _quota_exceeded
-    if not USE_SEMANTIC_SCORING or _quota_exceeded:
-        return score_item_keywords(title, summary)
-    try:
-        scorer = get_semantic_scorer()
-        semantic_score = scorer.score_text(f"{title} {summary}".strip())
-        return scorer.score_to_int(semantic_score, scale=10)
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
-            if not _quota_exceeded:
-                print("  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
-                _quota_exceeded = True
-        else:
-            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
-        return score_item_keywords(title, summary)
 
 
 # --- Listing page scraping and link extraction ---
@@ -235,8 +149,8 @@ def run_web_scraper_agent() -> List[dict]:
     from summarizer import summarize_article, generate_fallback_summary
 
     ensure_out_dir()
-    seen = load_web_seen()
-    summaries_cache = load_web_summaries()
+    seen = load_json(WEB_SEEN_PATH, {})
+    summaries_cache = load_json(WEB_SUMMARIES_PATH, {})
     now = time.time()
 
     # Merge DB-backed seen hashes to survive container restarts
@@ -250,16 +164,16 @@ def run_web_scraper_agent() -> List[dict]:
                     seen[h] = now
                     merged += 1
             if merged:
-                print(f"🔄 Loaded {merged} previously seen web hashes from database")
+                print(f"Loaded {merged} previously seen web hashes from database")
     except Exception as e:
-        print(f"  ⚠ DB dedup check skipped: {e}")
+        print(f"  DB dedup check skipped: {e}")
 
     sources = load_web_sources()
     if not sources:
-        print("⚠ No web sources found in web_sources.txt")
+        print("No web sources found in web_sources.txt")
         return []
 
-    print(f"🌐 Processing {len(sources)} web sources via Firecrawl...")
+    print(f"Processing {len(sources)} web sources via Firecrawl...")
 
     all_items = []
     consecutive_failures = 0
@@ -268,13 +182,13 @@ def run_web_scraper_agent() -> List[dict]:
         markdown = scrape_listing_page(listing_url)
         if not markdown:
             consecutive_failures += 1
-            print(f"  ✗ {listing_url}: scrape failed")
+            print(f"  {listing_url}: scrape failed")
             # If 5+ consecutive failures, Firecrawl is likely out of credits
             if consecutive_failures >= 5:
                 from services.firecrawl_service import get_firecrawl_service
                 fc = get_firecrawl_service()
                 if not fc.available:
-                    print(f"  ⚠ Firecrawl unavailable — skipping remaining {len(sources) - i - 1} web sources")
+                    print(f"  Firecrawl unavailable — skipping remaining {len(sources) - i - 1} web sources")
                     break
             continue
         consecutive_failures = 0
@@ -282,9 +196,9 @@ def run_web_scraper_agent() -> List[dict]:
         # Extract article links
         articles = extract_article_links(markdown, listing_url)
         if articles:
-            print(f"  ✓ {listing_url}: {len(articles)} articles")
+            print(f"  {listing_url}: {len(articles)} articles")
         else:
-            print(f"  ✗ {listing_url}: 0 articles found")
+            print(f"  {listing_url}: 0 articles found")
             continue
 
         for article in articles:
@@ -292,23 +206,19 @@ def run_web_scraper_agent() -> List[dict]:
             article["id"] = make_id(article["title"], article["link"])
             all_items.append(article)
 
-        # Rate limit between scrapes
-        if i < len(sources) - 1:
-            time.sleep(RATE_LIMIT_DELAY)
-
-    print(f"📋 Total web articles found: {len(all_items)}")
+    print(f"Total web articles found: {len(all_items)}")
 
     # Remove already-seen items
     fresh = [it for it in all_items if it["id"] not in seen]
-    print(f"🆕 Fresh web articles: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
+    print(f"Fresh web articles: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
 
     if not fresh:
         return []
 
     # Score items
-    print(f"📊 Scoring {len(fresh)} web articles...")
+    print(f"Scoring {len(fresh)} web articles...")
     for it in fresh:
-        it["score"] = score_item(it["title"])
+        it["score"] = score_semantic(it["title"])
 
     # Sort by score desc
     fresh.sort(key=lambda x: x["score"], reverse=True)
@@ -325,13 +235,13 @@ def run_web_scraper_agent() -> List[dict]:
             from summarizer import set_article_cache
             fc = get_firecrawl_service()
             if fc.available:
-                print(f"🔥 Batch pre-fetching {len(candidate_urls)} web articles via Firecrawl...")
+                print(f"Batch pre-fetching {len(candidate_urls)} web articles via Firecrawl...")
                 prefetched = fc.batch_scrape(candidate_urls)
                 if prefetched:
                     set_article_cache(prefetched)
-                    print(f"  ✓ Pre-fetched {len(prefetched)} articles")
+                    print(f"  Pre-fetched {len(prefetched)} articles")
         except Exception as e:
-            print(f"  ⚠ Batch pre-fetch failed: {e}")
+            print(f"  Batch pre-fetch failed: {e}")
 
     for it in fresh:
         article_url = it["link"]
@@ -350,35 +260,15 @@ def run_web_scraper_agent() -> List[dict]:
         seen[it["id"]] = now
 
     # Save caches
-    save_web_seen(seen)
+    save_json(WEB_SEEN_PATH, seen)
     if summaries_updated:
-        save_web_summaries(summaries_cache)
+        save_json(WEB_SUMMARIES_PATH, summaries_cache)
 
     # Update feed source statuses in DB
-    _update_feed_statuses(sources)
+    update_feed_statuses("web", sources)
 
-    print(f"✓ Web scraper complete: {len(picked)} articles")
+    print(f"Web scraper complete: {len(picked)} articles")
     return picked
-
-
-def _update_feed_statuses(listing_urls: list):
-    """Update FeedSource last_fetched after a web scraper run."""
-    try:
-        from web.database import SessionLocal
-        from web.models import FeedSource
-        with SessionLocal() as session:
-            feeds = session.query(FeedSource).filter(
-                FeedSource.source_type == "web",
-                FeedSource.status.in_(["active", "error"]),
-            ).all()
-            for feed in feeds:
-                if feed.feed_url in listing_urls:
-                    feed.last_fetched = datetime.now(timezone.utc)
-                    feed.status = "active"
-                    feed.error_message = None
-            session.commit()
-    except Exception:
-        pass  # Non-critical
 
 
 if __name__ == "__main__":

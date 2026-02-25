@@ -12,31 +12,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from services.firecrawl_service import get_firecrawl_service
-
-# Try to import youtube-transcript-api
-try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import (
-        TranscriptsDisabled,
-        NoTranscriptFound,
-        VideoUnavailable,
-    )
-    YOUTUBE_TRANSCRIPT_AVAILABLE = True
-    # Create API instance with optional Webshare proxy
-    from config import settings
-    if settings.webshare_proxy_username and settings.webshare_proxy_password:
-        from youtube_transcript_api.proxies import WebshareProxyConfig
-        _youtube_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username=settings.webshare_proxy_username,
-                proxy_password=settings.webshare_proxy_password,
-            )
-        )
-    else:
-        _youtube_api = YouTubeTranscriptApi()
-except ImportError:
-    YOUTUBE_TRANSCRIPT_AVAILABLE = False
-    _youtube_api = None
+from services.youtube_service import (
+    youtube_api,
+    YOUTUBE_TRANSCRIPT_AVAILABLE,
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+)
 
 # Markers that indicate a transcript section on a web page
 TRANSCRIPT_MARKERS = [
@@ -49,7 +31,7 @@ MIN_TRANSCRIPT_LENGTH = 500
 
 
 class TranscriptService:
-    """Cascading transcript fetcher: web → YouTube → description."""
+    """Cascading transcript fetcher: web -> YouTube -> description."""
 
     def get_transcript(
         self,
@@ -138,7 +120,7 @@ class TranscriptService:
         self, title: str, video_id: Optional[str] = None
     ) -> Optional[str]:
         """Fetch YouTube transcript if video_id is available."""
-        if not YOUTUBE_TRANSCRIPT_AVAILABLE or _youtube_api is None:
+        if not YOUTUBE_TRANSCRIPT_AVAILABLE or youtube_api is None:
             return None
         if not video_id:
             # Try to extract video ID from title search (simple heuristic)
@@ -147,7 +129,7 @@ class TranscriptService:
             return None
 
         try:
-            transcript = _youtube_api.fetch(video_id)
+            transcript = youtube_api.fetch(video_id)
             full_text = " ".join(entry.text for entry in transcript)
             return full_text[:12000] if full_text else None
         except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):

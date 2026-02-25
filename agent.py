@@ -5,13 +5,26 @@ import feedparser
 import json
 import time
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Dict
 
-# Semantic scoring imports
-from services.embeddings import EmbeddingService
-from services.vector_store import VectorStore
-from services.semantic_scorer import SemanticScorer
+from services.service_registry import (
+    get_embedding_service,
+    get_vector_store,
+    get_semantic_scorer,
+)
+from services.scoring_service import (
+    USE_SEMANTIC_SCORING,
+    score_keywords,
+    score_semantic,
+    score_items_batch,
+)
+from services.cache_service import load_json, save_json
+from services.feed_service import update_feed_statuses
+
+# Re-export for backwards compatibility (used by orchestration/)
+from services.scoring_service import AI_KEYWORDS as USER_INTERESTS
 
 
 # --- Config ---
@@ -21,53 +34,6 @@ DIGEST_TOP_N = None  # No overall digest limit
 PER_SOURCE_CAP = 10  # Max items per RSS feed (most recent)
 SEEN_PATH = os.path.join(OUT_DIR, "seen.json")
 SUMMARIES_PATH = os.path.join(OUT_DIR, "summaries.json")
-CHROMADB_DIR = "chromadb_data"
-
-# Enable/disable semantic scoring (set to False to use keyword scoring)
-USE_SEMANTIC_SCORING = True
-
-# Keywords for fallback scoring (used when semantic scoring is disabled or fails)
-USER_INTERESTS = [
-    "genai", "generative ai", "llm", "agent", "agents",
-    "openai", "anthropic", "gemini", "mistral", "claude",
-    "cursor", "copilot", "aider", "enterprise", "bank",
-    "marketing", "automation", "workflow", "funding", "acquisition"
-]
-
-# Semantic scorer singleton
-_semantic_scorer: Optional[SemanticScorer] = None
-_vector_store: Optional[VectorStore] = None
-_embedding_service: Optional[EmbeddingService] = None
-
-# Quota exceeded flag - prevents repeated API calls after 429 error
-_quota_exceeded: bool = False
-
-
-def get_embedding_service() -> EmbeddingService:
-    """Get or create the embedding service singleton."""
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-    return _embedding_service
-
-
-def get_vector_store() -> VectorStore:
-    """Get or create the vector store singleton."""
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = VectorStore(
-            persist_dir=CHROMADB_DIR,
-            embedding_service=get_embedding_service()
-        )
-    return _vector_store
-
-
-def get_semantic_scorer() -> SemanticScorer:
-    """Get or create the semantic scorer singleton."""
-    global _semantic_scorer
-    if _semantic_scorer is None:
-        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
-    return _semantic_scorer
 
 
 def ensure_out_dir() -> None:
@@ -96,122 +62,6 @@ def load_sources(path: str = SOURCES_FILE) -> List[str]:
             for line in f
             if line.strip() and not line.strip().startswith("#")
         ]
-
-
-def norm(text: str) -> str:
-    """Lowercase + collapse whitespace so matching is consistent."""
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
-
-
-def score_item_keywords(title: str, summary: str = "") -> int:
-    """Legacy keyword-based scoring."""
-    text = norm(f"{title} {summary}")
-    score = 0
-    for kw in USER_INTERESTS:
-        if kw in text:
-            score += 2
-    return score
-
-
-def score_item(title: str, summary: str = "") -> int:
-    """Score an item using semantic scoring or fallback to keywords."""
-    global _quota_exceeded
-
-    if not USE_SEMANTIC_SCORING or _quota_exceeded:
-        return score_item_keywords(title, summary)
-
-    try:
-        scorer = get_semantic_scorer()
-        text = f"{title} {summary}".strip()
-        semantic_score = scorer.score_text(text)
-        # Convert to integer scale (0-10) for compatibility
-        return scorer.score_to_int(semantic_score, scale=10)
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
-            if not _quota_exceeded:
-                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
-                _quota_exceeded = True
-        else:
-            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
-        return score_item_keywords(title, summary)
-
-
-def score_items_batch(items: List[dict]) -> List[dict]:
-    """Score multiple items using batch embedding for efficiency.
-
-    Args:
-        items: List of items with 'title', 'summary', and 'id' keys.
-
-    Returns:
-        Items with 'score', 'semantic_score', and 'embedding' added.
-    """
-    global _quota_exceeded
-    total = len(items)
-
-    if not USE_SEMANTIC_SCORING or not items or _quota_exceeded:
-        print(f"  📊 Scoring {total} items with keyword matching...")
-        for i, item in enumerate(items):
-            item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
-            item["semantic_score"] = None
-            item["embedding"] = None
-            if (i + 1) % 200 == 0:
-                print(f"    Progress: {i + 1}/{total} items scored")
-        print(f"  ✓ Keyword scoring complete")
-        return items
-
-    try:
-        print(f"  🧠 Generating embeddings for {total} items...")
-        print(f"    (This may take a moment - calling OpenAI API)")
-
-        embedding_service = get_embedding_service()
-        scorer = get_semantic_scorer()
-
-        # Prepare texts for batch embedding
-        texts = [f"{it['title']} {it.get('summary', '')}".strip() for it in items]
-
-        # Batch generate embeddings
-        embeddings = embedding_service.batch_embed(texts)
-
-        print(f"  ✓ Embeddings received, scoring items...")
-
-        # Score all items
-        scored_count = 0
-        fallback_count = 0
-        for item, embedding in zip(items, embeddings):
-            if embedding:
-                semantic_score = scorer.score_item(embedding)
-                item["score"] = scorer.score_to_int(semantic_score, scale=10)
-                item["semantic_score"] = semantic_score
-                item["embedding"] = embedding
-                scored_count += 1
-            else:
-                # Fallback for failed embeddings
-                item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
-                item["semantic_score"] = None
-                item["embedding"] = None
-                fallback_count += 1
-
-        print(f"  ✓ Semantic scoring complete: {scored_count} semantic, {fallback_count} keyword fallback")
-        return items
-
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
-            print(f"  ⚠ OpenAI API quota/rate limit hit - falling back to keyword scoring")
-            _quota_exceeded = True
-        else:
-            print(f"  ⚠ Batch semantic scoring failed: {e}")
-
-        print(f"  📊 Scoring {total} items with keyword matching...")
-        for i, item in enumerate(items):
-            item["score"] = score_item_keywords(item["title"], item.get("summary", ""))
-            item["semantic_score"] = None
-            item["embedding"] = None
-            if (i + 1) % 200 == 0:
-                print(f"    Progress: {i + 1}/{total} items scored")
-        print(f"  ✓ Keyword scoring complete")
-        return items
 
 
 def store_embeddings(items: List[dict], item_type: str = "news") -> None:
@@ -244,23 +94,14 @@ def store_embeddings(items: List[dict], item_type: str = "news") -> None:
 
         if items_to_store:
             vector_store.add_items_batch(items_to_store, item_type)
-            print(f"  📦 Stored {len(items_to_store)} embeddings in ChromaDB")
+            print(f"  Stored {len(items_to_store)} embeddings in ChromaDB")
 
     except Exception as e:
-        print(f"  ⚠ Failed to store embeddings: {e}")
+        print(f"  Failed to store embeddings: {e}")
 
 
 def check_duplicates(items: List[dict], item_type: str = "news", threshold: float = 0.95) -> List[dict]:
-    """Filter out duplicate items based on embedding similarity.
-
-    Args:
-        items: List of items with 'id' and 'embedding' keys.
-        item_type: Type of items.
-        threshold: Similarity threshold for duplicate detection.
-
-    Returns:
-        Filtered list with duplicates removed.
-    """
+    """Filter out duplicate items based on embedding similarity."""
     if not USE_SEMANTIC_SCORING:
         return items
 
@@ -273,7 +114,6 @@ def check_duplicates(items: List[dict], item_type: str = "news", threshold: floa
                 filtered.append(item)
                 continue
 
-            # Check if similar item already exists
             similar = vector_store.find_similar(
                 embedding=item["embedding"],
                 item_type=item_type,
@@ -283,12 +123,12 @@ def check_duplicates(items: List[dict], item_type: str = "news", threshold: floa
             if not similar:
                 filtered.append(item)
             else:
-                print(f"  🔄 Duplicate detected: {item['title'][:50]}...")
+                print(f"  Duplicate detected: {item['title'][:50]}...")
 
         return filtered
 
     except Exception as e:
-        print(f"  ⚠ Duplicate check failed: {e}")
+        print(f"  Duplicate check failed: {e}")
         return items
 
 
@@ -313,7 +153,7 @@ def fetch_rss_items(feed_url: str, limit: int = PER_SOURCE_CAP) -> List[dict]:
 
         return items
     except Exception as e:
-        print(f"  ⚠ Error fetching {feed_url}: {e}")
+        print(f"  Error fetching {feed_url}: {e}")
         return []
 
 
@@ -323,37 +163,11 @@ def make_id(title: str, link: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
-def load_seen() -> Dict[str, float]:
-    if not os.path.exists(SEEN_PATH):
-        return {}
-    with open(SEEN_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_seen(seen: Dict[str, float]) -> None:
-    with open(SEEN_PATH, "w", encoding="utf-8") as f:
-        json.dump(seen, f, indent=2)
-
-
-def load_summaries() -> Dict[str, str]:
-    """Load cached summaries by article URL."""
-    if not os.path.exists(SUMMARIES_PATH):
-        return {}
-    with open(SUMMARIES_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_summaries(summaries: Dict[str, str]) -> None:
-    """Save cached summaries by article URL."""
-    with open(SUMMARIES_PATH, "w", encoding="utf-8") as f:
-        json.dump(summaries, f, indent=2)
-
-
 def run_agent() -> str:
     from summarizer import summarize_article, generate_fallback_summary
     ensure_out_dir()
-    seen = load_seen()
-    summaries_cache = load_summaries()
+    seen = load_json(SEEN_PATH, {})
+    summaries_cache = load_json(SUMMARIES_PATH, {})
     now = time.time()
 
     # Merge DB-backed seen hashes to survive container restarts
@@ -367,73 +181,85 @@ def run_agent() -> str:
                     seen[h] = now  # Add with current timestamp
                     merged += 1
             if merged:
-                print(f"🔄 Loaded {merged} previously seen hashes from database")
+                print(f"Loaded {merged} previously seen hashes from database")
     except Exception as e:
-        print(f"  ⚠ DB dedup check skipped: {e}")
+        print(f"  DB dedup check skipped: {e}")
 
     sources = load_sources()
-    print(f"📰 Processing {len(sources)} news sources...")
-    
-    # Run podcast agent (will return empty list if no podcasts configured)
-    # This is independent - news processing continues even if podcasts fail
-    try:
+    print(f"Processing {len(sources)} news sources...")
+
+    # Run podcast, video, and web scraper agents concurrently
+    podcast_episodes = []
+    video_episodes = []
+    web_articles = []
+
+    def _run_podcast():
         from podcast_agent import run_podcast_agent
-        podcast_episodes = run_podcast_agent()
-        if podcast_episodes:
-            print(f"✓ Found {len(podcast_episodes)} podcast episodes")
-        else:
-            print("⚠ No new podcast episodes found (all may have been seen already)")
-    except Exception as e:
-        print(f"⚠ Warning: Podcast agent failed: {e}")
-        print("   (News processing will continue independently)")
-        podcast_episodes = []
+        return run_podcast_agent()
 
-    # Run video agent (will return empty list if no videos configured)
-    try:
+    def _run_video():
         from video_agent import run_video_agent
-        video_episodes = run_video_agent(max_videos=5, days_back=7)
-        if video_episodes:
-            print(f"✓ Found {len(video_episodes)} AI-relevant videos")
-        else:
-            print("⚠ No new AI-relevant videos found")
-    except Exception as e:
-        print(f"⚠ Warning: Video agent failed: {e}")
-        print("   (News processing will continue independently)")
-        video_episodes = []
+        return run_video_agent(max_videos=5, days_back=7)
 
-    # Run web scraper agent (scrapes non-RSS listing pages via Firecrawl)
-    try:
+    def _run_web():
         from web_scraper_agent import run_web_scraper_agent
-        web_articles = run_web_scraper_agent()
-        if web_articles:
-            print(f"✓ Found {len(web_articles)} web articles")
-        else:
-            print("⚠ No new web articles found")
-    except Exception as e:
-        print(f"⚠ Warning: Web scraper agent failed: {e}")
-        print("   (News processing will continue independently)")
-        web_articles = []
+        return run_web_scraper_agent()
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        podcast_f = executor.submit(_run_podcast)
+        video_f = executor.submit(_run_video)
+        web_f = executor.submit(_run_web)
+
+        try:
+            podcast_episodes = podcast_f.result(timeout=600)
+            if podcast_episodes:
+                print(f"Found {len(podcast_episodes)} podcast episodes")
+            else:
+                print("No new podcast episodes found (all may have been seen already)")
+        except Exception as e:
+            print(f"Warning: Podcast agent failed: {e}")
+            print("   (News processing will continue independently)")
+
+        try:
+            video_episodes = video_f.result(timeout=600)
+            if video_episodes:
+                print(f"Found {len(video_episodes)} AI-relevant videos")
+            else:
+                print("No new AI-relevant videos found")
+        except Exception as e:
+            print(f"Warning: Video agent failed: {e}")
+            print("   (News processing will continue independently)")
+
+        try:
+            web_articles = web_f.result(timeout=600)
+            if web_articles:
+                print(f"Found {len(web_articles)} web articles")
+            else:
+                print("No new web articles found")
+        except Exception as e:
+            print(f"Warning: Web scraper agent failed: {e}")
+            print("   (News processing will continue independently)")
 
     all_items = []
     for src in sources:
         items = fetch_rss_items(src)
         if items:
-            print(f"  ✓ {src}: {len(items)} items")
+            print(f"  {src}: {len(items)} items")
         for it in items:
             it["source"] = src
             it["id"] = make_id(it["title"], it["link"])
             all_items.append(it)
 
-    print(f"📋 Total news items fetched: {len(all_items)}")
+    print(f"Total news items fetched: {len(all_items)}")
 
     # Batch score all items using semantic scoring
     if USE_SEMANTIC_SCORING:
-        print("🧠 Generating embeddings and semantic scores...")
+        print("Generating embeddings and semantic scores...")
         all_items = score_items_batch(all_items)
     else:
         for it in all_items:
-            it["score"] = score_item(it["title"], it.get("summary", ""))
-    
+            it["score"] = score_semantic(it["title"], it.get("summary", ""))
+
     # Remove already-seen items and deduplicate within batch by ID
     seen_ids = set()
     fresh = []
@@ -441,19 +267,19 @@ def run_agent() -> str:
         if it["id"] not in seen and it["id"] not in seen_ids:
             seen_ids.add(it["id"])
             fresh.append(it)
-    print(f"🆕 Fresh news items: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
+    print(f"Fresh news items: {len(fresh)} (seen: {len(all_items) - len(fresh)})")
 
     # Check for semantic duplicates
     if USE_SEMANTIC_SCORING:
         fresh = check_duplicates(fresh, item_type="news")
-        print(f"🔍 After duplicate check: {len(fresh)} unique items")
+        print(f"After duplicate check: {len(fresh)} unique items")
 
     # Sort by score desc
     fresh.sort(key=lambda x: x["score"], reverse=True)
 
     picked = []
     if len(fresh) == 0:
-        print("⚠ No fresh news items found - all items have been seen already")
+        print("No fresh news items found - all items have been seen already")
         print("   (Delete out/seen.json to reset and see all items again)")
     summaries_updated = False
 
@@ -468,20 +294,20 @@ def run_agent() -> str:
     PREFETCH_LIMIT = 50  # Cap Firecrawl usage per run
     if candidate_urls:
         if len(candidate_urls) > PREFETCH_LIMIT:
-            print(f"🔥 Capping Firecrawl pre-fetch to {PREFETCH_LIMIT} of {len(candidate_urls)} articles (saving credits)")
+            print(f"Capping Firecrawl pre-fetch to {PREFETCH_LIMIT} of {len(candidate_urls)} articles (saving credits)")
             candidate_urls = candidate_urls[:PREFETCH_LIMIT]
         try:
             from services.firecrawl_service import get_firecrawl_service
             from summarizer import set_article_cache
             fc = get_firecrawl_service()
             if fc.available:
-                print(f"🔥 Batch pre-fetching {len(candidate_urls)} articles via Firecrawl...")
+                print(f"Batch pre-fetching {len(candidate_urls)} articles via Firecrawl...")
                 prefetched = fc.batch_scrape(candidate_urls)
                 if prefetched:
                     set_article_cache(prefetched)
-                    print(f"  ✓ Pre-fetched {len(prefetched)} articles")
+                    print(f"  Pre-fetched {len(prefetched)} articles")
         except Exception as e:
-            print(f"  ⚠ Batch pre-fetch failed: {e}")
+            print(f"  Batch pre-fetch failed: {e}")
 
     for it in fresh:
         # Check cache first
@@ -503,9 +329,9 @@ def run_agent() -> str:
         picked.append(it)
         seen[it["id"]] = now
 
-    save_seen(seen)
+    save_json(SEEN_PATH, seen)
     if summaries_updated:
-        save_summaries(summaries_cache)
+        save_json(SUMMARIES_PATH, summaries_cache)
 
     # Store embeddings in ChromaDB for picked items
     if USE_SEMANTIC_SCORING and picked:
@@ -513,7 +339,7 @@ def run_agent() -> str:
 
     # Combine news and podcasts into unified list, sorted by score
     all_digest_items = []
-    
+
     # Add news items
     for it in picked:
         all_digest_items.append({
@@ -527,7 +353,7 @@ def run_agent() -> str:
             "summary": it.get("ai_summary", ""),
             "show_name": None
         })
-    
+
     # Add podcast episodes
     for ep in podcast_episodes:
         all_digest_items.append({
@@ -575,7 +401,7 @@ def run_agent() -> str:
     try:
         from web.db_writer import get_seen_links_from_db
         seen_links = get_seen_links_from_db(days=14)
-        print(f"🔄 Loaded {len(seen_links)} links from recent digests for cross-day dedup")
+        print(f"Loaded {len(seen_links)} links from recent digests for cross-day dedup")
     except Exception:
         seen_links = set()
     deduped_items = []
@@ -584,7 +410,7 @@ def run_agent() -> str:
             seen_links.add(item["link"])
             deduped_items.append(item)
     if len(deduped_items) < len(all_digest_items):
-        print(f"🔄 Removed {len(all_digest_items) - len(deduped_items)} cross-source duplicates")
+        print(f"Removed {len(all_digest_items) - len(deduped_items)} cross-source duplicates")
     all_digest_items = deduped_items
 
     # Sort all items by score (descending)
@@ -659,7 +485,7 @@ def run_agent() -> str:
             f.write(f' · Web: {len(web_articles)}')
         f.write(f' · Total items: {len(all_digest_items)}</p>\n')
         f.write("    </header>\n\n")
-        
+
         # Unified section with all items (news + podcasts) sorted by score
         f.write('    <section class="space-y-6">\n')
 
@@ -678,7 +504,7 @@ def run_agent() -> str:
             else:
                 item_type_icon = "📺"
                 item_type_label = "Video"
-            
+
             f.write('      <article class="relative rounded-lg border border-slate-800 bg-slate-900/70 p-6 shadow-sm hover:bg-slate-900 transition-colors">\n')
             f.write('        <div class="absolute top-3 right-3">\n')
             f.write('          <span class="px-2 py-1 text-xs font-bold uppercase tracking-wide rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-sm">Fresh</span>\n')
@@ -697,7 +523,7 @@ def run_agent() -> str:
             f.write(f'            </div>\n')
             f.write(f'          </div>\n')
             f.write(f'        </div>\n')
-            
+
             f.write('        <ul class="mt-4 space-y-2 text-sm text-slate-200">\n')
             if item["type"] in ("news", "web"):
                 f.write(f'          <li><span class="font-semibold text-slate-100">Link:</span> <a href="{item["link"]}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline break-all">{item["link"]}</a></li>\n')
@@ -723,7 +549,7 @@ def run_agent() -> str:
             f.write("      </article>\n\n")
 
         f.write("    </section>\n")
-        
+
         f.write("  </main>\n")
         f.write("</body>\n")
         f.write("</html>\n")
@@ -746,59 +572,37 @@ def run_agent() -> str:
             md_path=md_path,
             html_path=html_path
         )
-        print(f"💾 Saved digest to database")
+        print(f"Saved digest to database")
 
         # Run topic clustering on the new digest
         if USE_SEMANTIC_SCORING:
             try:
                 from tasks.clustering_tasks import cluster_latest_digest
-                print("🏷️ Running topic clustering...")
+                print("Running topic clustering...")
                 result = cluster_latest_digest()
                 if "error" not in result:
-                    print(f"  ✓ Created {result.get('clusters_created', 0)} topic clusters")
+                    print(f"  Created {result.get('clusters_created', 0)} topic clusters")
                 else:
-                    print(f"  ⚠ Clustering: {result.get('error')}")
+                    print(f"  Clustering: {result.get('error')}")
             except Exception as ce:
-                print(f"  ⚠ Topic clustering failed: {ce}")
+                print(f"  Topic clustering failed: {ce}")
 
     except Exception as e:
-        print(f"⚠ Database save failed: {e}")
+        print(f"Database save failed: {e}")
 
     # Send email with digest
     try:
         from emailer import send_digest_email
         send_digest_email(html_path, md_path, date_str)
     except Exception as e:
-        print(f"⚠ Email sending failed: {e}")
+        print(f"Email sending failed: {e}")
 
     # Update feed source statuses in DB after run
-    _update_feed_statuses("news", sources, len(all_items))
+    update_feed_statuses("news", sources)
 
     return md_path
-
-
-def _update_feed_statuses(source_type: str, feed_urls: list, total_items: int):
-    """Update FeedSource last_fetched and item_count after an agent run."""
-    try:
-        from web.database import SessionLocal
-        from web.models import FeedSource
-        with SessionLocal() as session:
-            feeds = session.query(FeedSource).filter(
-                FeedSource.source_type == source_type,
-                FeedSource.status.in_(["active", "error"]),
-            ).all()
-            for feed in feeds:
-                if feed.feed_url in feed_urls:
-                    feed.last_fetched = datetime.now(timezone.utc)
-                    feed.status = "active"
-                    feed.error_message = None
-            session.commit()
-    except Exception:
-        pass  # Non-critical
 
 
 if __name__ == "__main__":
     path = run_agent()
     print(f"Digest written to: {path}")
-
- 

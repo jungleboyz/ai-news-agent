@@ -5,49 +5,31 @@ Fetches transcripts and generates key learnings summaries.
 
 import os
 import re
-import json
 import hashlib
-from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
 import feedparser
 import requests
-from dotenv import load_dotenv
 
-# Semantic scoring imports
-from services.embeddings import EmbeddingService
-from services.vector_store import VectorStore
-from services.semantic_scorer import SemanticScorer
-
-# Try to import youtube-transcript-api
-try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import (
-        TranscriptsDisabled,
-        NoTranscriptFound,
-        VideoUnavailable
-    )
-    YOUTUBE_TRANSCRIPT_AVAILABLE = True
-    # Create a global API instance with optional Webshare proxy
-    from config import settings
-    if settings.webshare_proxy_username and settings.webshare_proxy_password:
-        from youtube_transcript_api.proxies import WebshareProxyConfig
-        _youtube_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username=settings.webshare_proxy_username,
-                proxy_password=settings.webshare_proxy_password,
-            )
-        )
-        print("YouTube transcript API: using Webshare proxy")
-    else:
-        _youtube_api = YouTubeTranscriptApi()
-except ImportError:
-    YOUTUBE_TRANSCRIPT_AVAILABLE = False
-    _youtube_api = None
-    print("Warning: youtube-transcript-api not installed. Run: pip install youtube-transcript-api")
-
-load_dotenv()
+from services.youtube_service import (
+    youtube_api,
+    YOUTUBE_TRANSCRIPT_AVAILABLE,
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    VideoUnavailable,
+)
+from services.service_registry import get_vector_store
+from services.scoring_service import (
+    USE_SEMANTIC_SCORING,
+    score_keywords,
+    score_semantic,
+    score_single_with_embedding,
+)
+from services.cache_service import load_set, save_set
+from services.feed_service import fetch_feeds_parallel, update_feed_statuses
 
 # Cache directory for video data
 CACHE_DIR = Path("cache/videos")
@@ -55,76 +37,6 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Seen videos file
 SEEN_FILE = Path("out/seen_videos.json")
-
-# AI/GenAI keywords for fallback scoring
-AI_KEYWORDS = [
-    "ai", "artificial intelligence", "machine learning", "deep learning",
-    "neural network", "gpt", "chatgpt", "claude", "llm", "large language model",
-    "generative ai", "genai", "openai", "anthropic", "google ai", "gemini",
-    "transformer", "diffusion", "stable diffusion", "midjourney", "dall-e",
-    "copilot", "agent", "ai agent", "rag", "retrieval", "embedding",
-    "fine-tuning", "prompt engineering", "inference", "training",
-    "computer vision", "nlp", "natural language", "speech recognition",
-    "text-to-speech", "text-to-image", "multimodal", "foundation model"
-]
-
-# Semantic scoring config
-USE_SEMANTIC_SCORING = True
-CHROMADB_DIR = "chromadb_data"
-
-# Service singletons
-_semantic_scorer: Optional[SemanticScorer] = None
-_vector_store: Optional[VectorStore] = None
-_embedding_service: Optional[EmbeddingService] = None
-
-# Quota exceeded flag - prevents repeated API calls after 429 error
-_quota_exceeded: bool = False
-
-
-def get_embedding_service() -> EmbeddingService:
-    """Get or create the embedding service singleton."""
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-    return _embedding_service
-
-
-def get_vector_store() -> VectorStore:
-    """Get or create the vector store singleton."""
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = VectorStore(
-            persist_dir=CHROMADB_DIR,
-            embedding_service=get_embedding_service()
-        )
-    return _vector_store
-
-
-def get_semantic_scorer() -> SemanticScorer:
-    """Get or create the semantic scorer singleton."""
-    global _semantic_scorer
-    if _semantic_scorer is None:
-        _semantic_scorer = SemanticScorer(embedding_service=get_embedding_service())
-    return _semantic_scorer
-
-
-def load_seen_videos() -> set:
-    """Load set of previously seen video IDs."""
-    if SEEN_FILE.exists():
-        try:
-            with open(SEEN_FILE, "r") as f:
-                data = json.load(f)
-                return set(data.get("seen", []))
-        except:
-            pass
-    return set()
-
-
-def save_seen_videos(seen: set):
-    """Save seen video IDs."""
-    SEEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SEEN_FILE, "w") as f:
-        json.dump({"seen": list(seen)}, f)
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -191,107 +103,44 @@ def resolve_youtube_handle(handle: str) -> Optional[str]:
 
 def fetch_youtube_transcript(video_id: str) -> Optional[str]:
     """Fetch transcript for a YouTube video."""
-    if not YOUTUBE_TRANSCRIPT_AVAILABLE or _youtube_api is None:
+    if not YOUTUBE_TRANSCRIPT_AVAILABLE or youtube_api is None:
         return None
 
     try:
-        # Fetch transcript using the new API
-        transcript = _youtube_api.fetch(video_id)
-
-        # Combine all text segments (new API uses .text attribute)
+        transcript = youtube_api.fetch(video_id)
         full_text = " ".join([entry.text for entry in transcript])
         return full_text
 
-    except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable) as e:
+    except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):
         return None
     except Exception as e:
         print(f"  Warning: Error fetching transcript for {video_id}: {e}")
         return None
 
 
-def score_video_keywords(title: str, description: str = "", transcript: str = "") -> int:
-    """Legacy keyword-based scoring for videos."""
-    text = f"{title} {description} {transcript}".lower()
-    score = 0
-
-    for keyword in AI_KEYWORDS:
-        if keyword in text:
-            # Higher weight for title matches
-            if keyword in title.lower():
-                score += 3
-            else:
-                score += 1
-
-    return score
-
-
-def score_video(title: str, description: str = "", transcript: str = "") -> int:
-    """Score a video using semantic or keyword scoring."""
-    global _quota_exceeded
-
-    if not USE_SEMANTIC_SCORING or _quota_exceeded:
-        return score_video_keywords(title, description, transcript)
-
-    try:
-        scorer = get_semantic_scorer()
-        text = f"{title} {description} {transcript}".strip()
-        semantic_score = scorer.score_text(text)
-        return scorer.score_to_int(semantic_score, scale=10)
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
-            if not _quota_exceeded:
-                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
-                _quota_exceeded = True
-        else:
-            print(f"  ⚠ Semantic scoring failed, using keywords: {e}")
-        return score_video_keywords(title, description, transcript)
-
-
-def score_video_semantic(video: Dict[str, Any], transcript: str = "") -> Dict[str, Any]:
-    """Score a video and store embedding information.
-
-    Args:
-        video: Video dict with title, description, video_id.
-        transcript: Optional transcript text.
-
-    Returns:
-        Video dict with score, semantic_score, and embedding added.
-    """
-    global _quota_exceeded
-
-    if not USE_SEMANTIC_SCORING or _quota_exceeded:
-        video["score"] = score_video_keywords(video["title"], video.get("description", ""), transcript)
-        video["semantic_score"] = None
-        video["embedding"] = None
+def _fetch_transcript_for_video(video: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch transcript for a single video (used in parallel execution)."""
+    video_id = video.get("video_id")
+    if not video_id:
         return video
 
-    try:
-        embedding_service = get_embedding_service()
-        scorer = get_semantic_scorer()
+    transcript = fetch_youtube_transcript(video_id)
+    if not transcript:
+        try:
+            from services.transcript_service import TranscriptService
+            ts = TranscriptService()
+            transcript, _source = ts.get_transcript(
+                title=video['title'],
+                link=video['link'],
+                video_id=video_id,
+            )
+            if _source == "description":
+                transcript = None
+        except Exception:
+            pass
 
-        text = f"{video['title']} {video.get('description', '')} {transcript}".strip()
-        embedding = embedding_service.get_embedding(text)
-        semantic_score = scorer.score_item(embedding)
-
-        video["score"] = scorer.score_to_int(semantic_score, scale=10)
-        video["semantic_score"] = semantic_score
-        video["embedding"] = embedding
-
-        return video
-
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
-            if not _quota_exceeded:
-                print(f"  ⚠ OpenAI API quota/rate limit hit - switching to keyword scoring")
-                _quota_exceeded = True
-        else:
-            print(f"  ⚠ Semantic scoring failed for video: {e}")
-        video["score"] = score_video_keywords(video["title"], video.get("description", ""), transcript)
-        video["semantic_score"] = None
-        video["embedding"] = None
-        return video
+    video['transcript'] = transcript
+    return video
 
 
 def store_video_embeddings(videos: List[Dict[str, Any]]) -> None:
@@ -319,72 +168,82 @@ def store_video_embeddings(videos: List[Dict[str, Any]]) -> None:
 
         if items_to_store:
             vector_store.add_items_batch(items_to_store, "video")
-            print(f"  📦 Stored {len(items_to_store)} video embeddings in ChromaDB")
+            print(f"  Stored {len(items_to_store)} video embeddings in ChromaDB")
 
     except Exception as e:
-        print(f"  ⚠ Failed to store video embeddings: {e}")
+        print(f"  Failed to store video embeddings: {e}")
+
+
+def _parse_single_feed(feed_url: str, max_per_feed: int = 5, days_back: int = 7) -> List[Dict[str, Any]]:
+    """Parse a single video RSS feed and return recent videos."""
+    videos = []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+
+    try:
+        actual_url = feed_url
+        # Handle YouTube URLs - convert to RSS feed
+        if "youtube.com/@" in feed_url:
+            channel_id = extract_channel_id(feed_url)
+            if channel_id:
+                actual_url = get_youtube_channel_feed(channel_id)
+            else:
+                print(f"  Could not resolve: {feed_url}")
+                return []
+        elif "youtube.com/channel/" in feed_url:
+            channel_id = extract_channel_id(feed_url)
+            if channel_id:
+                actual_url = get_youtube_channel_feed(channel_id)
+
+        feed = feedparser.parse(actual_url)
+
+        if feed.bozo and not feed.entries:
+            print(f"  Failed to parse: {feed_url}")
+            return []
+
+        feed_title = feed.feed.get('title', 'Unknown Channel')
+        count = 0
+
+        for entry in feed.entries[:max_per_feed]:
+            pub_date = None
+            if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+            elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+
+            if pub_date and pub_date < cutoff:
+                continue
+
+            video_id = extract_video_id(entry.get('link', ''))
+
+            videos.append({
+                'title': entry.get('title', 'Unknown'),
+                'link': entry.get('link', ''),
+                'video_id': video_id,
+                'published': pub_date,
+                'channel': feed_title,
+                'description': entry.get('summary', ''),
+                'feed_url': feed_url
+            })
+            count += 1
+
+        if count > 0:
+            print(f"  {feed_url}: {count} videos")
+
+    except Exception as e:
+        print(f"  Error parsing {feed_url}: {e}")
+
+    return videos
 
 
 def parse_video_feeds(feed_urls: List[str], max_per_feed: int = 5, days_back: int = 7) -> List[Dict[str, Any]]:
-    """Parse video RSS feeds and return recent videos."""
+    """Parse video RSS feeds in parallel and return recent videos."""
+    def _parse(url):
+        return _parse_single_feed(url, max_per_feed=max_per_feed, days_back=days_back)
+
+    results = fetch_feeds_parallel(feed_urls, _parse, max_workers=10)
     videos = []
-    cutoff = datetime.now() - timedelta(days=days_back)
-
-    for feed_url in feed_urls:
-        try:
-            # Handle YouTube URLs - convert to RSS feed
-            if "youtube.com/@" in feed_url:
-                channel_id = extract_channel_id(feed_url)
-                if channel_id:
-                    feed_url = get_youtube_channel_feed(channel_id)
-                else:
-                    print(f"  ✗ Could not resolve: {feed_url}")
-                    continue
-            elif "youtube.com/channel/" in feed_url:
-                channel_id = extract_channel_id(feed_url)
-                if channel_id:
-                    feed_url = get_youtube_channel_feed(channel_id)
-
-            feed = feedparser.parse(feed_url)
-
-            if feed.bozo and not feed.entries:
-                print(f"  ✗ Failed to parse: {feed_url}")
-                continue
-
-            feed_title = feed.feed.get('title', 'Unknown Channel')
-            count = 0
-
-            for entry in feed.entries[:max_per_feed]:
-                # Parse published date
-                pub_date = None
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    pub_date = datetime(*entry.published_parsed[:6])
-                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                    pub_date = datetime(*entry.updated_parsed[:6])
-
-                # Skip old videos
-                if pub_date and pub_date < cutoff:
-                    continue
-
-                video_id = extract_video_id(entry.get('link', ''))
-
-                videos.append({
-                    'title': entry.get('title', 'Unknown'),
-                    'link': entry.get('link', ''),
-                    'video_id': video_id,
-                    'published': pub_date,
-                    'channel': feed_title,
-                    'description': entry.get('summary', ''),
-                    'feed_url': feed_url
-                })
-                count += 1
-
-            if count > 0:
-                print(f"  ✓ {feed_url}: {count} videos")
-
-        except Exception as e:
-            print(f"  ✗ Error parsing {feed_url}: {e}")
-
+    for url in feed_urls:
+        videos.extend(results.get(url, []))
     return videos
 
 
@@ -392,76 +251,79 @@ def process_videos(videos: List[Dict[str, Any]], max_videos: int = 10) -> List[D
     """Process videos: fetch transcripts, score, and filter top AI-related videos."""
     from summarizer import summarize_podcast, generate_fallback_podcast_summary
 
-    seen = load_seen_videos()
+    seen = load_set(str(SEEN_FILE))
 
     # Merge DB-backed seen video IDs to survive container restarts
     try:
         from web.db_writer import get_seen_links_from_db
         db_links = get_seen_links_from_db(days=30)
-        # Extract YouTube video IDs from stored links
-        import re as _re
         for link in db_links:
-            m = _re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', link)
+            m = re.search(r'(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})', link)
             if m:
                 seen.add(m.group(1))
-        print(f"🔄 Video seen cache: {len(seen)} total (including DB)")
+        print(f"Video seen cache: {len(seen)} total (including DB)")
     except Exception as e:
-        print(f"  ⚠ DB dedup check skipped: {e}")
+        print(f"  DB dedup check skipped: {e}")
 
     processed = []
 
-    print(f"📹 Processing {len(videos)} videos for AI content...")
+    print(f"Processing {len(videos)} videos for AI content...")
     if USE_SEMANTIC_SCORING:
-        print("🧠 Using semantic scoring for video relevance...")
+        print("Using semantic scoring for video relevance...")
 
+    # Filter out seen and no-ID videos first
+    candidates = []
     for video in videos:
         video_id = video.get('video_id')
-
-        # Skip if no video ID or already seen
-        if not video_id:
+        if not video_id or video_id in seen:
             continue
-        if video_id in seen:
-            continue
+        candidates.append(video)
 
-        # Initial score based on title/description
-        initial_score = score_video(video['title'], video.get('description', ''))
-
-        # If title looks relevant, try to get transcript
-        transcript = None
+    # Initial score based on title/description to decide which need transcripts
+    need_transcript = []
+    for video in candidates:
+        initial_score = score_semantic(video['title'], video.get('description', ''))
         if initial_score > 0 or any(kw in video['title'].lower() for kw in ['ai', 'gpt', 'llm', 'machine learning']):
-            print(f"  🔍 Fetching transcript: {video['title'][:50]}...")
-            transcript = fetch_youtube_transcript(video_id)
-            # Fallback: try web transcript scraping if YouTube transcript unavailable
-            if not transcript:
+            need_transcript.append(video)
+        else:
+            video['transcript'] = None
+            need_transcript.append(video)  # Still process, just skip transcript fetch
+
+    # Fetch transcripts in parallel for candidates that need them
+    videos_needing_fetch = [v for v in need_transcript
+                           if score_semantic(v['title'], v.get('description', '')) > 0
+                           or any(kw in v['title'].lower() for kw in ['ai', 'gpt', 'llm', 'machine learning'])]
+
+    if videos_needing_fetch:
+        print(f"  Fetching transcripts for {len(videos_needing_fetch)} videos in parallel...")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(_fetch_transcript_for_video, v): v for v in videos_needing_fetch}
+            for future in as_completed(futures):
                 try:
-                    from services.transcript_service import TranscriptService
-                    ts = TranscriptService()
-                    transcript, _source = ts.get_transcript(
-                        title=video['title'],
-                        link=video['link'],
-                        video_id=video_id,
-                    )
-                    if _source == "description":
-                        # Description-only isn't a real transcript for videos
-                        transcript = None
-                except Exception:
-                    pass
+                    future.result(timeout=30)
+                except Exception as e:
+                    video = futures[future]
+                    print(f"  Transcript fetch failed for {video['title'][:40]}: {e}")
+                    video['transcript'] = None
 
-        # Re-score with transcript (using semantic scoring if enabled)
-        video['transcript'] = transcript
+    # Score all candidates with transcripts
+    for video in candidates:
         video['hash'] = hashlib.sha256(video['link'].encode()).hexdigest()[:24]
-        video['id'] = video['hash']  # For consistency with other agents
+        video['id'] = video['hash']
 
-        video = score_video_semantic(video, transcript or '')
+        int_score, semantic_score, embedding = score_single_with_embedding(
+            video['title'], video.get('description', ''), video.get('transcript') or ''
+        )
+        video['score'] = int_score
+        video['semantic_score'] = semantic_score
+        video['embedding'] = embedding
 
-        # Mark as seen
-        seen.add(video_id)
+        seen.add(video['video_id'])
 
         if video['score'] > 0:
             processed.append(video)
 
-    # Save seen videos
-    save_seen_videos(seen)
+    save_set(str(SEEN_FILE), seen)
 
     # Sort by score and return top videos
     processed.sort(key=lambda x: x['score'], reverse=True)
@@ -480,7 +342,7 @@ def summarize_videos(videos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     for video in videos:
         if video.get('transcript'):
-            print(f"  📝 Summarizing: {video['title'][:50]}...")
+            print(f"  Summarizing: {video['title'][:50]}...")
             summary = summarize_podcast(
                 video['transcript'],
                 title=video['title'],
@@ -528,7 +390,7 @@ def load_video_feeds(filepath: str = "videos.txt") -> List[str]:
 
 def run_video_agent(max_videos: int = 10, days_back: int = 7) -> List[Dict[str, Any]]:
     """Main entry point for video agent."""
-    print("📺 Starting Video Agent...")
+    print("Starting Video Agent...")
 
     # Load feeds
     feeds = load_video_feeds()
@@ -536,44 +398,24 @@ def run_video_agent(max_videos: int = 10, days_back: int = 7) -> List[Dict[str, 
         print("No video feeds configured in videos.txt")
         return []
 
-    print(f"📡 Processing {len(feeds)} video feeds...")
+    print(f"Processing {len(feeds)} video feeds...")
 
-    # Parse feeds
+    # Parse feeds (parallel)
     videos = parse_video_feeds(feeds, max_per_feed=5, days_back=days_back)
-    print(f"📋 Total videos fetched: {len(videos)}")
+    print(f"Total videos fetched: {len(videos)}")
 
     # Process and score
     relevant_videos = process_videos(videos, max_videos=max_videos)
-    print(f"🎯 AI-relevant videos: {len(relevant_videos)}")
+    print(f"AI-relevant videos: {len(relevant_videos)}")
 
     # Generate summaries
     if relevant_videos:
         summarized = summarize_videos(relevant_videos)
-        _update_feed_statuses(feeds)
+        update_feed_statuses("video", feeds)
         return summarized
 
-    _update_feed_statuses(feeds)
+    update_feed_statuses("video", feeds)
     return []
-
-
-def _update_feed_statuses(feed_urls: list):
-    """Update FeedSource last_fetched after a video agent run."""
-    try:
-        from web.database import SessionLocal
-        from web.models import FeedSource
-        with SessionLocal() as session:
-            db_feeds = session.query(FeedSource).filter(
-                FeedSource.source_type == "video",
-                FeedSource.status.in_(["active", "error"]),
-            ).all()
-            for feed in db_feeds:
-                if feed.feed_url in feed_urls:
-                    feed.last_fetched = datetime.now()
-                    feed.status = "active"
-                    feed.error_message = None
-            session.commit()
-    except Exception:
-        pass  # Non-critical
 
 
 if __name__ == "__main__":
