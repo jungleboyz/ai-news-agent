@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Health Intelligence Bot</title>
+    <meta name="robots" content="noindex, nofollow">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1.5rem; color: #333; line-height: 1.7; background: #fafafa; }
+        h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+        h2 { font-size: 1.15rem; margin-top: 2rem; color: #111; }
+        p, li { font-size: 0.95rem; }
+        ul { margin: 0.5rem 0; padding-left: 1.5rem; }
+        li { margin-bottom: 0.3rem; }
+        .updated { color: #888; font-size: 0.85rem; margin-bottom: 2rem; }
+        strong { color: #111; }
+        code { background: #eee; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: 26 February 2026</p>
+
+    <h2>1. Overview</h2>
+    <p>Health Intelligence Bot ("the App") is a personal health management tool that connects to wearable devices and uses AI to generate personalised recovery recommendations. This policy describes how your data is collected, used, and stored.</p>
+
+    <h2>2. Data We Collect</h2>
+    <p>When you connect your Whoop account, the App accesses the following data via the Whoop API:</p>
+    <ul>
+        <li>Physiological cycles (strain, heart rate, kilojoules)</li>
+        <li>Recovery metrics (recovery score, HRV, resting heart rate, SpO2, skin temperature)</li>
+        <li>Sleep data (duration, stages, performance, respiratory rate)</li>
+        <li>Workout data (sport type, strain, heart rate, duration)</li>
+        <li>Body measurements (height, weight, max heart rate)</li>
+        <li>Basic profile information (name, email)</li>
+    </ul>
+    <p>You may also manually enter pain logs, nutrition data, lab results, and wellness questionnaire responses.</p>
+
+    <h2>3. How We Use Your Data</h2>
+    <p>Your data is used solely to:</p>
+    <ul>
+        <li>Display your health metrics on a personal dashboard</li>
+        <li>Generate personalised recovery and nutrition recommendations using AI analysis</li>
+        <li>Track trends in pain, recovery, sleep, and training load over time</li>
+    </ul>
+
+    <h2>4. Data Storage</h2>
+    <p>All data is stored locally on your machine in a SQLite database. No data is sent to external servers except:</p>
+    <ul>
+        <li><strong>Whoop API</strong> — to fetch your wearable data (read-only access)</li>
+        <li><strong>Anthropic API</strong> — anonymised health metrics are sent to generate AI recommendations; no personally identifiable information is included</li>
+        <li><strong>PubMed API</strong> — search queries for medical research references (no personal data sent)</li>
+    </ul>
+
+    <h2>5. Data Sharing</h2>
+    <p>Your data is never sold, shared with third parties, or used for advertising. This is a personal tool that runs on your own machine.</p>
+
+    <h2>6. Data Retention</h2>
+    <p>Data remains in your local database until you delete it. You can delete the entire database at any time by removing the <code>data/health.db</code> file.</p>
+
+    <h2>7. OAuth Tokens</h2>
+    <p>Whoop OAuth tokens are stored locally in the database. You can revoke access at any time through your Whoop account settings or by deleting the local database.</p>
+
+    <h2>8. Contact</h2>
+    <p>For questions about this privacy policy, please contact us at privacy@ripin.ai.</p>
+</body>
+</html>
