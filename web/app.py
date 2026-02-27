@@ -254,7 +254,7 @@ async def logout():
 
 
 # Privacy policy (unlisted — direct access only, not linked from site)
-@app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+@app.api_route("/privacy", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
 async def privacy_health_intelligence(request: Request):
     return templates.TemplateResponse("privacy_health.html", {"request": request})
 
