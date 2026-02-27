@@ -83,10 +83,13 @@ async def lifespan(app: FastAPI):
 
     # Start APScheduler
     if settings.scheduler_enabled:
+        # Use Australia/Sydney timezone so the schedule automatically
+        # adjusts for AEST/AEDT daylight saving transitions.
+        # SCHEDULER_HOUR is now interpreted as local Sydney time (default: 6 = 6 AM).
         trigger = CronTrigger(
             hour=settings.scheduler_cron_hour,
             minute=settings.scheduler_cron_minute,
-            timezone="UTC",
+            timezone=settings.scheduler_timezone,
         )
         scheduler.add_job(
             _run_digest_job,

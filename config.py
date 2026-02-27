@@ -29,7 +29,8 @@ class Settings:
     # Cron / Scheduler
     cron_secret: str = os.getenv("CRON_SECRET", "dev-cron-secret")
     scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
-    scheduler_cron_hour: int = int(os.getenv("SCHEDULER_HOUR", "20"))      # UTC hour (20 = 6 AM AEST)
+    scheduler_timezone: str = os.getenv("SCHEDULER_TIMEZONE", "Australia/Sydney")
+    scheduler_cron_hour: int = int(os.getenv("SCHEDULER_HOUR", "6"))       # Local time (6 = 6 AM Sydney)
     scheduler_cron_minute: int = int(os.getenv("SCHEDULER_MINUTE", "0"))
 
     # Webshare proxy (for YouTube transcript fetching from cloud IPs)

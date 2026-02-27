@@ -1,0 +1,85 @@
+# Daily Digest Monitor
+# Runs every morning at 20:30 UTC (7:30 AM AEDT) to verify the 6 AM digest ran.
+# Also supports manual trigger for on-demand checks.
+
+name: Monitor Daily Digest
+
+on:
+  schedule:
+    # 20:30 UTC = 7:30 AM AEDT (UTC+11) — 90 min after scheduled digest
+    - cron: "30 20 * * *"
+  workflow_dispatch:
+    inputs:
+      retry:
+        description: "Auto-retry if digest is missing"
+        type: boolean
+        default: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run digest monitor
+        id: monitor
+        env:
+          APP_URL: ${{ secrets.APP_URL || 'https://ripin.ai' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_USERNAME: ${{ secrets.SITE_USERNAME }}
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: |
+          RETRY_FLAG=""
+          if [ "${{ github.event.inputs.retry }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            RETRY_FLAG="--retry"
+          fi
+          python scripts/monitor_digest.py --verbose $RETRY_FLAG 2>&1 | tee monitor_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Create issue on failure
+        if: steps.monitor.outputs.exit_code == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = fs.readFileSync('monitor_output.txt', 'utf8');
+            const today = new Date().toISOString().split('T')[0];
+
+            // Check if an issue already exists for today
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'digest-monitor',
+              state: 'open',
+            });
+
+            const todayIssue = existing.data.find(i => i.title.includes(today));
+            if (todayIssue) {
+              // Add comment to existing issue
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: todayIssue.number,
+                body: `## Monitor Re-check\n\`\`\`\n${output}\n\`\`\``,
+              });
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🔴 Digest Monitor Alert — ${today}`,
+                body: `## Daily Digest Monitor Report\n\nThe automated monitor detected issues with today's digest run.\n\n\`\`\`\n${output}\n\`\`\`\n\n### Next Steps\n- Check Railway deployment logs\n- Verify API keys are valid\n- Check if any source feeds are down\n- Re-run manually: \`python scripts/monitor_digest.py --retry\``,
+                labels: ['digest-monitor', 'bug'],
+              });
+            }
