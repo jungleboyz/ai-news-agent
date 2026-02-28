@@ -138,7 +138,10 @@ def fetch_rss_items(feed_url: str, limit: int = PER_SOURCE_CAP) -> List[dict]:
     Fetch RSS items from a single feed URL.
     Returns the most recent `limit` items with title + link.
     """
+    import socket
+    old_timeout = socket.getdefaulttimeout()
     try:
+        socket.setdefaulttimeout(15)  # 15s per feed to prevent indefinite hangs
         feed = feedparser.parse(feed_url)
 
         items = []
@@ -156,6 +159,8 @@ def fetch_rss_items(feed_url: str, limit: int = PER_SOURCE_CAP) -> List[dict]:
     except Exception as e:
         print(f"  Error fetching {feed_url}: {e}")
         return []
+    finally:
+        socket.setdefaulttimeout(old_timeout)
 
 
 def make_id(title: str, link: str) -> str:
@@ -241,9 +246,12 @@ def run_agent() -> str:
             print(f"Warning: Web scraper agent failed: {e}")
             print("   (News processing will continue independently)")
 
+    # Fetch all RSS feeds in parallel (was sequential — 290+ feeds one-by-one)
+    from services.feed_service import fetch_feeds_parallel
+    feed_results = fetch_feeds_parallel(sources, fetch_rss_items, max_workers=10, timeout=30)
+
     all_items = []
-    for src in sources:
-        items = fetch_rss_items(src)
+    for src, items in feed_results.items():
         if items:
             print(f"  {src}: {len(items)} items")
         for it in items:

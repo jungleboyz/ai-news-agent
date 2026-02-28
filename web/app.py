@@ -36,13 +36,33 @@ DIGEST_JOB_ID = "daily_digest"
 
 def _run_digest_job():
     """Job function called by APScheduler to run the digest pipeline."""
+    import threading
+
+    TIMEOUT = 1800  # 30 minute hard limit
+
     print(f"Scheduler: starting digest run at {dt.now(timezone.utc).isoformat()}")
-    try:
-        from agent import run_agent
-        run_agent()
+
+    result = [None]  # mutable container for thread result
+    error = [None]
+
+    def _target():
+        try:
+            from agent import run_agent
+            run_agent()
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join(timeout=TIMEOUT)
+
+    if t.is_alive():
+        print(f"Scheduler: digest run TIMED OUT after {TIMEOUT}s — "
+              "a feed or API call may be hanging")
+    elif error[0]:
+        print(f"Scheduler: digest run failed: {error[0]}")
+    else:
         print("Scheduler: digest run completed")
-    except Exception as e:
-        print(f"Scheduler: digest run failed: {e}")
 
 
 def get_real_ip(request: Request) -> str:
