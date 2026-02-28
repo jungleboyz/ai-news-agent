@@ -39,5 +39,8 @@ psycopg2-binary>=2.9.0
 # Async HTTP client
 httpx>=0.25.0
 
+# Text-to-speech
+elevenlabs>=1.0.0
+
 # Production server
 gunicorn>=21.0.0

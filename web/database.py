@@ -73,10 +73,12 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     print("init_db: tables created successfully")
 
-    # Brief cache columns (brief_json, brief_generated_at) are defined in the
-    # Digest model and created by create_all() for new DBs. For existing DBs,
-    # run manually: ALTER TABLE digests ADD COLUMN brief_json TEXT;
-    #               ALTER TABLE digests ADD COLUMN brief_generated_at TIMESTAMP;
+    # Brief cache columns (brief_json, brief_generated_at, brief_audio_path)
+    # are defined in the Digest model and created by create_all() for new DBs.
+    # For existing DBs, run manually:
+    #   ALTER TABLE digests ADD COLUMN brief_json TEXT;
+    #   ALTER TABLE digests ADD COLUMN brief_generated_at TIMESTAMP;
+    #   ALTER TABLE digests ADD COLUMN brief_audio_path TEXT;
 
     # Create FTS virtual table for SQLite only
     if is_sqlite():

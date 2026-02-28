@@ -35,6 +35,23 @@
         {% if summary.item_count %}
         <p class="text-slate-400 text-sm mt-2">Based on {{ summary.item_count }} news items</p>
         {% endif %}
+
+        {% if audio_url %}
+        <!-- Audio Player -->
+        <div class="mt-4 flex items-center gap-3">
+            <button onclick="toggleAudio()" id="audio-play-btn"
+                class="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium">
+                <svg id="audio-icon-play" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+                <svg id="audio-icon-pause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+                <span id="audio-label">Listen to Brief</span>
+            </button>
+            <audio id="brief-audio" src="{{ audio_url }}" preload="metadata"></audio>
+        </div>
+        {% endif %}
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -161,6 +178,37 @@
 </div>
 
 <script>
+function toggleAudio() {
+    const audio = document.getElementById('brief-audio');
+    const iconPlay = document.getElementById('audio-icon-play');
+    const iconPause = document.getElementById('audio-icon-pause');
+    const label = document.getElementById('audio-label');
+    if (!audio) return;
+
+    if (audio.paused) {
+        audio.play();
+        iconPlay.classList.add('hidden');
+        iconPause.classList.remove('hidden');
+        label.textContent = 'Pause';
+    } else {
+        audio.pause();
+        iconPlay.classList.remove('hidden');
+        iconPause.classList.add('hidden');
+        label.textContent = 'Listen to Brief';
+    }
+}
+
+(function() {
+    const audio = document.getElementById('brief-audio');
+    if (audio) {
+        audio.addEventListener('ended', function() {
+            document.getElementById('audio-icon-play').classList.remove('hidden');
+            document.getElementById('audio-icon-pause').classList.add('hidden');
+            document.getElementById('audio-label').textContent = 'Listen to Brief';
+        });
+    }
+})();
+
 async function copyBrief() {
     const summary = `{{ summary.headline or 'Daily AI News Summary' }}
 

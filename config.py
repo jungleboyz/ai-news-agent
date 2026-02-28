@@ -50,6 +50,10 @@ class Settings:
     smtp_password: Optional[str] = os.getenv("SMTP_PASSWORD")
     from_email: Optional[str] = os.getenv("FROM_EMAIL")
 
+    # ElevenLabs TTS
+    elevenlabs_api_key: Optional[str] = os.getenv("ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Rachel"
+
     # Feature Flags
     use_semantic_scoring: bool = os.getenv("USE_SEMANTIC_SCORING", "true").lower() == "true"
     use_topic_clustering: bool = os.getenv("USE_TOPIC_CLUSTERING", "true").lower() == "true"
