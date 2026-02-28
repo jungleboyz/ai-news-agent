@@ -96,6 +96,8 @@ async def lifespan(app: FastAPI):
             trigger=trigger,
             id=DIGEST_JOB_ID,
             replace_existing=True,
+            misfire_grace_time=3600,  # Allow up to 1 hour late (handles Railway restarts)
+            coalesce=True,           # If multiple misfires, only run once
         )
         scheduler.start()
         job = scheduler.get_job(DIGEST_JOB_ID)

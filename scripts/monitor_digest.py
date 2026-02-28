@@ -257,33 +257,19 @@ class DigestMonitor:
         now_aedt = now_utc.astimezone(AEDT)
         now_aest = now_utc.astimezone(AEST)
 
-        # Determine if we're currently in AEDT (first Sun Oct to first Sun Apr)
-        month = now_utc.month
-        is_dst = 4 <= month <= 10  # Rough check (Australia DST is Oct-Apr)
-        is_dst = not is_dst  # Invert: DST is active Oct-Apr, inactive Apr-Oct
-
-        # More accurate: DST in Australia is first Sunday of October to first Sunday of April
+        # Determine if we're currently in AEDT or AEST
         # For simplicity, Oct-Mar is AEDT, Apr-Sep is AEST
+        month = now_utc.month
         if month >= 10 or month <= 3:
             tz_label = "AEDT (UTC+11)"
-            expected_utc_hour = 19  # 6 AM AEDT = 19:00 UTC
         else:
             tz_label = "AEST (UTC+10)"
-            expected_utc_hour = 20  # 6 AM AEST = 20:00 UTC
 
         print(f"   Current timezone: {tz_label}")
         print(f"   Local time: {now_aedt.strftime('%H:%M')} AEDT / {now_aest.strftime('%H:%M')} AEST")
-        print(f"   For 6 AM local, SCHEDULER_HOUR should be: {expected_utc_hour} (UTC)")
-
-        # Note: We can't check the actual env var on Railway from here,
-        # but we can flag if the default (20) would be wrong
-        if month >= 10 or month <= 3:
-            print(f"   ⚠️  Currently in AEDT — default SCHEDULER_HOUR=20 runs at 7 AM, not 6 AM")
-            print(f"      Set SCHEDULER_HOUR=19 in Railway env vars for 6 AM AEDT")
-            self.warnings.append(
-                "During AEDT (Oct-Mar), SCHEDULER_HOUR should be 19 for 6 AM local time. "
-                "Default of 20 runs at 7 AM AEDT."
-            )
+        # APScheduler's CronTrigger uses SCHEDULER_TIMEZONE (default: Australia/Sydney)
+        # so SCHEDULER_HOUR is already in local Sydney time — no UTC conversion needed.
+        print(f"   SCHEDULER_HOUR is interpreted as local Sydney time (handles DST automatically)")
 
     def retry_digest(self) -> bool:
         """Step 6: Trigger a digest retry."""

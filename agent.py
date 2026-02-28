@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Dict
 
+from config import settings
 from services.service_registry import (
     get_embedding_service,
     get_vector_store,
@@ -416,8 +417,15 @@ def run_agent() -> str:
     # Sort all items by score (descending)
     all_digest_items.sort(key=lambda x: x["score"], reverse=True)
 
-    # Write digest
-    date_str = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+    # Write digest — use Australia/Sydney date so the digest matches the local
+    # calendar day even when the server runs in UTC (e.g. 6 AM AEDT = 7 PM UTC
+    # the previous day).
+    try:
+        from zoneinfo import ZoneInfo
+        digest_tz = ZoneInfo(settings.scheduler_timezone)
+    except Exception:
+        digest_tz = timezone.utc
+    date_str = datetime.now(digest_tz).strftime("%Y-%m-%d")
     md_path = os.path.join(OUT_DIR, f"digest-{date_str}.md")
     html_path = os.path.join(OUT_DIR, f"digest-{date_str}.html")
 
