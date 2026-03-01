@@ -83,3 +83,52 @@ class VoiceService:
                 db_session.rollback()
 
         return f"/static/audio/{filename}"
+
+    def generate_audio_bytes(self, script: str) -> bytes:
+        """Call ElevenLabs TTS API and return raw MP3 bytes."""
+        from elevenlabs import ElevenLabs
+
+        client = ElevenLabs(api_key=settings.elevenlabs_api_key)
+
+        logger.info("Generating TTS audio bytes (%d chars)", len(script))
+        audio_iterator = client.text_to_speech.convert(
+            voice_id=settings.elevenlabs_voice_id,
+            text=script,
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+        )
+
+        chunks = []
+        for chunk in audio_iterator:
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    def get_or_generate_audio_bytes(self, summary: dict, digest_date: date, db_session, digest) -> Optional[bytes]:
+        """Return cached MP3 bytes from DB, or generate and cache them."""
+        if not settings.elevenlabs_api_key:
+            return None
+
+        # Check DB cache first
+        if digest and digest.brief_audio_data:
+            return digest.brief_audio_data
+
+        script = self.generate_audio_script(summary)
+        if not script:
+            return None
+
+        try:
+            audio_bytes = self.generate_audio_bytes(script)
+        except Exception:
+            logger.exception("Failed to generate TTS audio for %s", digest_date)
+            return None
+
+        # Cache in DB
+        if db_session and digest:
+            try:
+                digest.brief_audio_data = audio_bytes
+                db_session.commit()
+            except Exception:
+                logger.exception("Failed to cache audio bytes in DB")
+                db_session.rollback()
+
+        return audio_bytes

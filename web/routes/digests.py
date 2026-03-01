@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
+from config import settings
 from web.database import get_db
 from web.models import Digest, Item, UserProfile, PreferencePreset
 
@@ -91,12 +92,6 @@ async def homepage(
 
     summary = service.get_or_generate_summary(db, target_date)
 
-    # Generate or retrieve TTS audio
-    from services.voice_service import VoiceService
-    digest = db.query(Digest).filter(Digest.date == target_date).first()
-    voice = VoiceService()
-    audio_url = voice.get_or_generate_audio(summary, target_date, db_session=db, digest=digest)
-
     digests = db.query(Digest).order_by(Digest.date.desc()).limit(14).all()
     available_dates = [d.date for d in digests]
 
@@ -107,7 +102,7 @@ async def homepage(
             "summary": summary,
             "digest_date": target_date,
             "available_dates": available_dates,
-            "audio_url": audio_url,
+            "has_elevenlabs": bool(settings.elevenlabs_api_key),
         },
     )
 

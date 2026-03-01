@@ -1,6 +1,6 @@
 """SQLAlchemy models for the news agent database."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Float, Boolean
+from sqlalchemy import Column, Integer, String, Text, Date, DateTime, ForeignKey, Float, Boolean, LargeBinary
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -20,6 +20,7 @@ class Digest(Base):
     brief_json = Column(Text, nullable=True)  # Cached AI-generated executive summary (JSON)
     brief_generated_at = Column(DateTime, nullable=True)
     brief_audio_path = Column(Text, nullable=True)  # Filename of generated TTS audio
+    brief_audio_data = Column(LargeBinary, nullable=True)  # Cached TTS MP3 bytes
 
     # Relationship to items
     items = relationship("Item", back_populates="digest", cascade="all, delete-orphan")

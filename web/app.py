@@ -1,11 +1,11 @@
 """FastAPI application entry point."""
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime as dt, timezone
+from datetime import date, datetime as dt, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,8 +15,11 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from sqlalchemy.orm import Session
+
 from config import settings
-from web.database import init_db
+from web.database import get_db, init_db
+from web.models import Digest
 from web.middleware.auth import (
     AuthMiddleware,
     create_session_cookie,
@@ -225,6 +228,37 @@ app.include_router(clusters.router)
 app.include_router(preferences.router)
 app.include_router(sources.router)
 app.include_router(chat.router)
+
+
+# --- Audio API ---
+
+@app.get("/api/audio/brief/{digest_date}")
+async def audio_brief(digest_date: str, db: Session = Depends(get_db)):
+    """Stream TTS audio for a daily brief, generating on first request."""
+    from services.daily_brief import DailyBriefService
+    from services.voice_service import VoiceService
+
+    try:
+        parsed_date = date.fromisoformat(digest_date)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"detail": "Invalid date format"})
+
+    digest = db.query(Digest).filter(Digest.date == parsed_date).first()
+    if not digest:
+        return JSONResponse(status_code=404, content={"detail": "Digest not found"})
+
+    summary = DailyBriefService().get_or_generate_summary(db, parsed_date)
+
+    voice = VoiceService()
+    audio_bytes = voice.get_or_generate_audio_bytes(summary, parsed_date, db_session=db, digest=digest)
+    if not audio_bytes:
+        return JSONResponse(status_code=404, content={"detail": "Audio not available"})
+
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 # Login routes
