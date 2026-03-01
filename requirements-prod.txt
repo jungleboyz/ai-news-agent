@@ -44,3 +44,6 @@ firecrawl-py>=1.0.0
 # In-process scheduler
 apscheduler>=3.10.0
 
+# Text-to-speech
+elevenlabs>=1.0.0
+
