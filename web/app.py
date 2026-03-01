@@ -5,7 +5,7 @@ from datetime import datetime as dt, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -172,6 +172,21 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # 4. Authentication
 app.add_middleware(AuthMiddleware)
+
+
+# HEAD request middleware — converts HEAD to GET, then strips the body
+@app.middleware("http")
+async def head_request_middleware(request: Request, call_next):
+    if request.method == "HEAD":
+        request.scope["method"] = "GET"
+        response = await call_next(request)
+        return Response(
+            content=b"",
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+    return await call_next(request)
 
 
 # Error handlers

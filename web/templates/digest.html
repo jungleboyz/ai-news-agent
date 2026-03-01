@@ -196,8 +196,16 @@
             </div>
             <div class="space-y-4">
                 {% for item in cluster_items %}
+                <div class="cluster-item{% if loop.index > 10 %} cluster-overflow hidden{% endif %}">
                 {% include "partials/item_card.html" %}
+                </div>
                 {% endfor %}
+                {% if cluster_items|length > 10 %}
+                <button onclick="toggleClusterItems(this)" class="w-full py-2 text-sm text-slate-400 hover:text-emerald-400 transition-colors border border-slate-800 rounded-lg hover:border-slate-700"
+                    data-collapsed="true">
+                    Show {{ cluster_items|length - 10 }} more
+                </button>
+                {% endif %}
             </div>
         </div>
         {% endfor %}
@@ -227,6 +235,15 @@ const FILTER_KEYWORDS = {
     enterprise: ['enterprise', 'saas', 'b2b', 'business', 'productivity', 'workflow', 'automation', 'crm', 'erp', 'salesforce', 'microsoft', 'corporate', 'it infrastructure', 'devops', 'platform'],
     research: ['research', 'paper', 'arxiv', 'benchmark', 'model', 'llm', 'gpt', 'transformer', 'training', 'dataset', 'neural', 'deep learning', 'machine learning', 'diffusion', 'reasoning', 'multimodal']
 };
+
+function toggleClusterItems(btn) {
+    const container = btn.parentElement;
+    const overflowItems = container.querySelectorAll('.cluster-overflow');
+    const collapsed = btn.dataset.collapsed === 'true';
+    overflowItems.forEach(el => el.classList.toggle('hidden', !collapsed));
+    btn.dataset.collapsed = collapsed ? 'false' : 'true';
+    btn.textContent = collapsed ? 'Show fewer' : `Show ${overflowItems.length} more`;
+}
 
 function filterDigest(vertical) {
     const cards = document.querySelectorAll('.item-card');

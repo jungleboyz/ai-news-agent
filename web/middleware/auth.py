@@ -14,7 +14,7 @@ from config import settings
 
 # Paths that require authentication (admin-only sections)
 PROTECTED_PATHS = {"/sources"}
-PROTECTED_PREFIXES = ("/api/feeds", "/api/sources")
+PROTECTED_PREFIXES = ("/api/feeds", "/api/sources", "/api/admin", "/api/clusters/rebuild")
 
 # Paths that are always accessible
 ALWAYS_PUBLIC = {"/login", "/health", "/favicon.ico"}
