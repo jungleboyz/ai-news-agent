@@ -52,7 +52,7 @@ class Settings:
 
     # ElevenLabs TTS
     elevenlabs_api_key: Optional[str] = os.getenv("ELEVENLABS_API_KEY")
-    elevenlabs_voice_id: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # "Rachel"
+    elevenlabs_voice_id: str = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # "Rachel"
 
     # Feature Flags
     use_semantic_scoring: bool = os.getenv("USE_SEMANTIC_SCORING", "true").lower() == "true"
