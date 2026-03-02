@@ -287,20 +287,26 @@ def _maybe_run_catchup(loop, executor):
     catch-up run in the background.  This makes the system self-healing after
     Railway restarts, redeploys, or container sleep events that cause the
     in-memory APScheduler to miss its daily window."""
-    now_utc = dt.now(timezone.utc)
+    import zoneinfo
+
+    sched_tz = zoneinfo.ZoneInfo(settings.scheduler_timezone)
+    now_local = dt.now(sched_tz)
     scheduled_hour = settings.scheduler_cron_hour
     scheduled_minute = settings.scheduler_cron_minute
 
-    # Only catch up if we're past today's scheduled time
-    scheduled_today = now_utc.replace(
+    # Compare in the scheduler's timezone (e.g. Australia/Sydney) so the
+    # catch-up triggers at the right wall-clock time regardless of DST.
+    scheduled_today = now_local.replace(
         hour=scheduled_hour, minute=scheduled_minute, second=0, microsecond=0
     )
-    if now_utc < scheduled_today:
-        print("Startup catch-up: not yet past scheduled time, skipping")
+    if now_local < scheduled_today:
+        print(f"Startup catch-up: not yet past {scheduled_hour:02d}:{scheduled_minute:02d} "
+              f"{settings.scheduler_timezone}, skipping")
         return
 
-    # Check DB for today's digest (use UTC date to match the scheduler's perspective)
-    today_utc = now_utc.date()
+    # Check DB for today's digest.  The digest date is stored as UTC date,
+    # so use UTC for the lookup.
+    today_utc = dt.now(timezone.utc).date()
     try:
         from web.database import SessionLocal
         from web.models import Digest
@@ -317,7 +323,8 @@ def _maybe_run_catchup(loop, executor):
 
     print(
         f"Startup catch-up: no digest for {today_utc} and it's past "
-        f"{scheduled_hour:02d}:{scheduled_minute:02d} UTC — triggering catch-up run"
+        f"{scheduled_hour:02d}:{scheduled_minute:02d} {settings.scheduler_timezone} "
+        f"— triggering catch-up run"
     )
     loop.run_in_executor(executor, _run_digest_job)
 
