@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Optional, Set
 
 from web.database import SessionLocal, init_db
-from web.models import Digest, Item
+from web.models import Digest, Item, Interaction
 
 
 def get_seen_hashes_from_db(days: int = 30, item_type: str = None) -> Set[str]:
@@ -112,7 +112,10 @@ def save_digest_to_db(
             existing.md_path = md_path
             existing.html_path = html_path
 
-            # Delete existing items
+            # Delete interactions referencing these items, then the items themselves
+            item_ids = [i.id for i in db.query(Item.id).filter(Item.digest_id == existing.id).all()]
+            if item_ids:
+                db.query(Interaction).filter(Interaction.item_id.in_(item_ids)).delete(synchronize_session=False)
             db.query(Item).filter(Item.digest_id == existing.id).delete()
             db.flush()
             digest = existing
