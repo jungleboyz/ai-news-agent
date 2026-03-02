@@ -81,11 +81,11 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
     try:
         from web.database import SessionLocal
         from web.models import Digest, Item
-        from datetime import date
 
+        today_utc = dt.now(timezone.utc).date()
         with SessionLocal() as session:
             digest = session.query(Digest).filter(
-                Digest.date == date.today()
+                Digest.date == today_utc
             ).first()
             if digest:
                 digest_date = digest.date

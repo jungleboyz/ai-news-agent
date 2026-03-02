@@ -420,7 +420,7 @@ def run_agent() -> str:
     all_digest_items.sort(key=lambda x: x["score"], reverse=True)
 
     # Write digest
-    date_str = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     md_path = os.path.join(OUT_DIR, f"digest-{date_str}.md")
     html_path = os.path.join(OUT_DIR, f"digest-{date_str}.html")
 
