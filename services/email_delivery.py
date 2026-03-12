@@ -1,10 +1,9 @@
 """Email delivery service for daily briefs."""
 import os
-import smtplib
 from datetime import date
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Optional
+
+import resend
 
 from services.daily_brief import DailyBriefService
 
@@ -14,21 +13,15 @@ class EmailDeliveryService:
 
     def __init__(
         self,
-        smtp_host: Optional[str] = None,
-        smtp_port: Optional[int] = None,
-        smtp_user: Optional[str] = None,
-        smtp_password: Optional[str] = None,
+        api_key: Optional[str] = None,
         from_email: Optional[str] = None,
     ):
-        self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = smtp_port or int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user = smtp_user or os.getenv("SMTP_USER")
-        self.smtp_password = smtp_password or os.getenv("SMTP_PASSWORD")
-        self.from_email = from_email or os.getenv("FROM_EMAIL", self.smtp_user)
+        self.api_key = api_key or os.getenv("RESEND_API_KEY")
+        self.from_email = from_email or os.getenv("FROM_EMAIL") or os.getenv("EMAIL_FROM", "onboarding@resend.dev")
 
     def is_configured(self) -> bool:
         """Check if email is properly configured."""
-        return bool(self.smtp_user and self.smtp_password)
+        return bool(self.api_key)
 
     def send_brief(
         self,
@@ -50,7 +43,7 @@ class EmailDeliveryService:
         if not self.is_configured():
             return {
                 "success": False,
-                "error": "Email not configured. Set SMTP_USER and SMTP_PASSWORD environment variables.",
+                "error": "Email not configured. Set RESEND_API_KEY environment variable.",
             }
 
         # Generate brief
@@ -65,24 +58,15 @@ class EmailDeliveryService:
         html_content = brief_service.generate_brief_html(summary, digest_date)
         text_content = brief_service.generate_brief_text(summary, digest_date)
 
-        # Create message
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"AI News Brief - {digest_date.strftime('%B %d, %Y')}"
-        msg["From"] = self.from_email
-        msg["To"] = to_email
-
-        # Attach both plain text and HTML versions
-        part1 = MIMEText(text_content, "plain")
-        part2 = MIMEText(html_content, "html")
-
-        msg.attach(part1)
-        msg.attach(part2)
-
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_password)
-                server.sendmail(self.from_email, to_email, msg.as_string())
+            resend.api_key = self.api_key
+            resend.Emails.send({
+                "from": self.from_email,
+                "to": [to_email],
+                "subject": f"AI News Brief - {digest_date.strftime('%B %d, %Y')}",
+                "html": html_content,
+                "text": text_content,
+            })
 
             return {
                 "success": True,

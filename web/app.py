@@ -61,15 +61,13 @@ def _run_digest_job():
 
 def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str | None):
     """Send a status report email with daily brief after the digest pipeline finishes."""
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
+    import resend
 
-    smtp_user = os.getenv("SMTP_USER") or os.getenv("SMTP_USERNAME")
-    smtp_pass = os.getenv("SMTP_PASSWORD")
-    to_email = os.getenv("EMAIL_TO") or os.getenv("FROM_EMAIL") or smtp_user
-    if not smtp_user or not smtp_pass or not to_email:
-        print("Scheduler: status email skipped (SMTP not configured)")
+    api_key = os.getenv("RESEND_API_KEY")
+    from_email = os.getenv("FROM_EMAIL") or os.getenv("EMAIL_FROM", "onboarding@resend.dev")
+    to_email = os.getenv("EMAIL_TO") or from_email
+    if not api_key or not to_email:
+        print("Scheduler: status email skipped (RESEND_API_KEY not configured)")
         return
 
     # Gather digest stats from DB
@@ -151,13 +149,10 @@ Duration: {minutes}m {seconds}s
     subject = f"Neural Feed {'OK' if error is None else 'FAILED'} — {started_at.strftime('%b %d')}"
 
     try:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = os.getenv("FROM_EMAIL") or smtp_user
-        msg["To"] = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(plain_body, "plain"))
+        resend.api_key = api_key
 
-        # If we have the HTML brief, build an HTML email with status + brief
+        # Build HTML body if we have the brief
+        html_body = None
         if brief_html:
             status_html = status_block.replace("\n", "<br>\n")
             html_body = (
@@ -167,14 +162,17 @@ Duration: {minutes}m {seconds}s
                 f'{status_html}</div>\n'
                 f'{brief_html}'
             )
-            msg.attach(MIMEText(html_body, "html"))
 
-        smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
+        params = {
+            "from": from_email,
+            "to": [to_email],
+            "subject": subject,
+            "text": plain_body,
+        }
+        if html_body:
+            params["html"] = html_body
+
+        resend.Emails.send(params)
         print(f"Scheduler: status email sent to {to_email}")
     except Exception as e:
         print(f"Scheduler: failed to send status email: {e}")

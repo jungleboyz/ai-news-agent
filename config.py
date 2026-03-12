@@ -43,12 +43,10 @@ class Settings:
     # Redis
     redis_url: Optional[str] = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # Email
-    smtp_host: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user: Optional[str] = os.getenv("SMTP_USER")
-    smtp_password: Optional[str] = os.getenv("SMTP_PASSWORD")
-    from_email: Optional[str] = os.getenv("FROM_EMAIL")
+    # Email (Resend)
+    resend_api_key: Optional[str] = os.getenv("RESEND_API_KEY")
+    email_from: str = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
+    email_to: Optional[str] = os.getenv("EMAIL_TO")
 
     # ElevenLabs TTS
     elevenlabs_api_key: Optional[str] = os.getenv("ELEVENLABS_API_KEY")

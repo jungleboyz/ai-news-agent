@@ -51,22 +51,21 @@ def check_env():
     load_dotenv()
     
     api_key = os.getenv("OPENAI_API_KEY")
-    smtp_username = os.getenv("SMTP_USERNAME")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    
+    resend_key = os.getenv("RESEND_API_KEY")
+
     api_ok = api_key and api_key != "your-openai-api-key"
-    email_ok = smtp_username and smtp_password
-    
+    email_ok = bool(resend_key)
+
     if api_ok:
         print("✓ OPENAI_API_KEY is set")
     else:
         print("⚠ OPENAI_API_KEY is not set (summaries will use fallback)")
-    
+
     if email_ok:
         print(f"✓ Email configured (sending to: {os.getenv('EMAIL_TO', 'robert.burden@gmail.com')})")
     else:
-        print("⚠ Email not configured (set SMTP_USERNAME and SMTP_PASSWORD in .env)")
-    
+        print("⚠ Email not configured (set RESEND_API_KEY in .env)")
+
     return api_ok and email_ok
 
 def main():
