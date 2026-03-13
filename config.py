@@ -12,7 +12,7 @@ class Settings:
     debug: bool = environment == "development"
 
     # Security
-    secret_key: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+    secret_key: str = os.getenv("SECRET_KEY", "")
     allowed_hosts: list[str] = os.getenv("ALLOWED_HOSTS", "*").split(",")
     site_username: str = os.getenv("SITE_USERNAME", "admin")
     site_password: Optional[str] = os.getenv("SITE_PASSWORD")
@@ -27,7 +27,7 @@ class Settings:
     embedding_providers: str = os.getenv("EMBEDDING_PROVIDERS", "openai,jina")
 
     # Cron / Scheduler
-    cron_secret: str = os.getenv("CRON_SECRET", "dev-cron-secret")
+    cron_secret: str = os.getenv("CRON_SECRET", "")
     scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
     scheduler_timezone: str = os.getenv("SCHEDULER_TIMEZONE", "Australia/Sydney")
     scheduler_cron_hour: int = int(os.getenv("SCHEDULER_HOUR", "6"))       # Local time (6 = 6 AM Sydney)
@@ -74,7 +74,20 @@ class Settings:
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    return Settings()
+    s = Settings()
+    if s.is_production:
+        missing = []
+        if not s.secret_key:
+            missing.append("SECRET_KEY")
+        if not s.cron_secret:
+            missing.append("CRON_SECRET")
+        if not s.site_password:
+            missing.append("SITE_PASSWORD")
+        if missing:
+            raise RuntimeError(
+                f"Production requires these environment variables: {', '.join(missing)}"
+            )
+    return s
 
 
 # Convenience access

@@ -532,8 +532,10 @@ _scheduler_enabled: bool = settings.scheduler_enabled
 async def cron_run_digest(request: Request):
     """Triggered by Railway cron. Runs the full digest pipeline."""
     # Verify cron secret to prevent unauthorized triggers
-    auth = request.headers.get("Authorization")
-    if auth != f"Bearer {settings.cron_secret}":
+    import hmac as _hmac
+    auth = request.headers.get("Authorization", "")
+    expected = f"Bearer {settings.cron_secret}"
+    if not settings.cron_secret or not _hmac.compare_digest(auth, expected):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
     # Check if scheduler is enabled
@@ -555,8 +557,10 @@ async def cron_run_digest(request: Request):
 @app.post("/cron/rebuild-clusters")
 async def cron_rebuild_clusters(request: Request):
     """Rebuild topic clusters for all digests. Auth via cron secret."""
-    auth = request.headers.get("Authorization")
-    if auth != f"Bearer {settings.cron_secret}":
+    import hmac as _hmac
+    auth = request.headers.get("Authorization", "")
+    expected = f"Bearer {settings.cron_secret}"
+    if not settings.cron_secret or not _hmac.compare_digest(auth, expected):
         return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
     import asyncio

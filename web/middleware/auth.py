@@ -78,8 +78,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
-        # Skip auth if no SITE_PASSWORD is configured (dev mode)
+        # Skip auth if no SITE_PASSWORD is configured (dev mode only)
         if not settings.site_password:
+            if settings.is_production:
+                return Response(
+                    content=json.dumps({"detail": "Server misconfigured: SITE_PASSWORD required"}),
+                    status_code=503,
+                    media_type="application/json",
+                )
             return await call_next(request)
 
         # Check if this path requires authentication
