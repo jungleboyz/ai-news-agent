@@ -7,11 +7,21 @@ from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from slowapi import Limiter
 
 from web.database import get_db
 from web.models import TopicCluster, Item, Digest
 
 router = APIRouter()
+
+
+def _get_real_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+limiter = Limiter(key_func=_get_real_ip)
 
 
 @router.get("/topics", response_class=HTMLResponse)
@@ -110,7 +120,9 @@ async def topic_detail(
 # API Endpoints
 
 @router.get("/api/topics")
+@limiter.limit("60/minute")
 async def api_list_topics(
+    request: Request,
     db: Session = Depends(get_db),
     digest_date: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=100),
@@ -244,7 +256,9 @@ async def api_digest_clusters(
 
 
 @router.post("/api/clusters/rebuild")
+@limiter.limit("5/hour")
 async def api_rebuild_clusters(
+    request: Request,
     days: Optional[int] = Query(None, ge=1, description="Days to look back. Omit for all digests."),
 ):
     """Rebuild topic clusters for digests (non-blocking). Omit days for all."""
@@ -264,7 +278,9 @@ async def api_rebuild_clusters(
 
 
 @router.get("/api/admin/digests/audit")
+@limiter.limit("30/minute")
 async def api_digest_audit(
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Audit all digests — show item counts and identify empty ones."""
@@ -295,7 +311,9 @@ async def api_digest_audit(
 
 
 @router.delete("/api/admin/digests/empty")
+@limiter.limit("5/hour")
 async def api_delete_empty_digests(
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Delete all digests that have zero items."""
@@ -318,7 +336,9 @@ async def api_delete_empty_digests(
 
 
 @router.get("/api/clusters/stats")
+@limiter.limit("60/minute")
 async def api_cluster_stats(
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Get clustering statistics."""

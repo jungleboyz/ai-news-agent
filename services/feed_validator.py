@@ -1,7 +1,44 @@
 """Feed URL validation and testing service."""
+import ipaddress
+import socket
+
 import feedparser
 import requests
 from urllib.parse import urlparse
+
+
+def validate_url(url: str) -> str | None:
+    """Validate a URL is safe to fetch (no SSRF).
+
+    Returns None if safe, or an error string if blocked.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return "Invalid URL"
+
+    if parsed.scheme not in ("http", "https"):
+        return f"Scheme '{parsed.scheme}' not allowed (only http/https)"
+
+    hostname = parsed.hostname
+    if not hostname:
+        return "No hostname in URL"
+
+    # Resolve hostname to check for private IPs
+    try:
+        addrs = socket.getaddrinfo(hostname, None)
+        for family, _, _, _, sockaddr in addrs:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                return f"URL resolves to private/reserved address"
+    except socket.gaierror:
+        return f"Cannot resolve hostname '{hostname}'"
+
+    # Block cloud metadata endpoints
+    if hostname in ("169.254.169.254", "metadata.google.internal"):
+        return "Cloud metadata endpoint blocked"
+
+    return None
 
 
 class FeedValidator:
@@ -16,6 +53,11 @@ class FeedValidator:
         Returns:
             dict with keys: success, title, item_count, error
         """
+        # SSRF check
+        url_error = validate_url(url)
+        if url_error:
+            return {"success": False, "title": None, "item_count": 0, "error": url_error}
+
         try:
             # Fetch with a reasonable timeout and user-agent
             headers = {"User-Agent": "AI-News-Agent/1.0 (Feed Validator)"}

@@ -15,7 +15,7 @@ from slowapi import Limiter
 
 from services.source_discovery import SourceDiscoveryService, DiscoveredItem
 from services.source_scoring import SourceScoringService, process_discovered_items
-from services.feed_validator import FeedValidator
+from services.feed_validator import FeedValidator, validate_url
 from web.database import get_db
 from web.models import SourceQuality, DiscoveredSource, FeedSource
 
@@ -167,6 +167,11 @@ async def create_feed(
     """Add a new feed source. Auto-validates and names if name not provided."""
     if body.source_type not in ("news", "podcast", "video", "web"):
         raise HTTPException(status_code=400, detail="source_type must be news, podcast, video, or web")
+
+    # SSRF validation
+    url_error = validate_url(body.feed_url)
+    if url_error:
+        raise HTTPException(status_code=400, detail=f"Invalid feed URL: {url_error}")
 
     # Check for duplicate
     existing = db.query(FeedSource).filter(FeedSource.feed_url == body.feed_url).first()

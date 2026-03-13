@@ -1,15 +1,25 @@
 """JSON API endpoints."""
 from datetime import date
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from slowapi import Limiter
 
 from web.database import get_db
 from web.models import Digest, Item
 
 router = APIRouter(prefix="/api")
+
+
+def _get_real_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+limiter = Limiter(key_func=_get_real_ip)
 
 
 class ItemResponse(BaseModel):
@@ -66,7 +76,9 @@ class PaginatedDigestsResponse(BaseModel):
 
 
 @router.get("/digests", response_model=PaginatedDigestsResponse)
+@limiter.limit("60/minute")
 async def api_digests(
+    request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -103,7 +115,9 @@ async def api_digests(
 
 
 @router.get("/digests/{digest_date}", response_model=DigestDetailResponse)
+@limiter.limit("60/minute")
 async def api_digest_detail(
+    request: Request,
     digest_date: str,
     db: Session = Depends(get_db)
 ):
@@ -150,7 +164,9 @@ async def api_digest_detail(
 
 
 @router.get("/items", response_model=PaginatedItemsResponse)
+@limiter.limit("60/minute")
 async def api_items(
+    request: Request,
     q: Optional[str] = Query(None, description="Search query"),
     date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),

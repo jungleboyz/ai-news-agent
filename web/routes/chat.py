@@ -1,4 +1,6 @@
 """Chat and Daily Brief routes."""
+import hashlib
+import hmac
 import json
 import re
 import uuid
@@ -19,6 +21,14 @@ from web.models import Digest, EmailSubscriber
 
 
 router = APIRouter(tags=["chat"])
+
+
+def _sign_unsubscribe_token(email: str) -> str:
+    """Create HMAC token for unsubscribe verification."""
+    return hmac.new(
+        settings.secret_key.encode(), email.lower().encode(), hashlib.sha256
+    ).hexdigest()
+
 
 def _get_real_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for")
@@ -331,46 +341,51 @@ async def subscribe(
     ).first()
 
     if existing:
-        if existing.is_active:
-            return {"success": True, "message": "Already subscribed"}
-        else:
+        if not existing.is_active:
             # Reactivate
             existing.is_active = True
             existing.unsubscribed_at = None
             db.commit()
-            return {"success": True, "message": "Subscription reactivated"}
+    else:
+        # Create new subscriber
+        subscriber = EmailSubscriber(
+            email=subscribe_request.email,
+            name=subscribe_request.name,
+        )
+        db.add(subscriber)
+        db.commit()
 
-    # Create new subscriber
-    subscriber = EmailSubscriber(
-        email=subscribe_request.email,
-        name=subscribe_request.name,
-    )
-    db.add(subscriber)
-    db.commit()
-
-    return {"success": True, "message": "Successfully subscribed"}
+    # Always return same message to prevent email enumeration
+    return {"success": True, "message": "Subscribed successfully"}
 
 
 @router.post("/api/unsubscribe")
+@limiter.limit("10/hour")
 async def unsubscribe(
+    request: Request,
     email: str,
+    token: str,
     db: Session = Depends(get_db),
 ):
-    """Unsubscribe from daily brief emails."""
+    """Unsubscribe from daily brief emails. Requires signed token."""
     from datetime import datetime
 
+    # Verify HMAC token to prevent unauthorized unsubscribe
+    expected = _sign_unsubscribe_token(email)
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=403, detail="Invalid unsubscribe token")
+
     subscriber = db.query(EmailSubscriber).filter(
-        EmailSubscriber.email == email
+        EmailSubscriber.email == email.lower()
     ).first()
 
-    if not subscriber:
-        return {"success": False, "message": "Email not found"}
+    if subscriber and subscriber.is_active:
+        subscriber.is_active = False
+        subscriber.unsubscribed_at = datetime.utcnow()
+        db.commit()
 
-    subscriber.is_active = False
-    subscriber.unsubscribed_at = datetime.utcnow()
-    db.commit()
-
-    return {"success": True, "message": "Successfully unsubscribed"}
+    # Always return success to prevent email enumeration
+    return {"success": True, "message": "Unsubscribed successfully"}
 
 
 @router.post("/api/brief/send")
@@ -414,6 +429,7 @@ async def send_brief_email(
     result = service.send_brief(db, to_email, target_date)
 
     if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error"))
+        detail = result.get("error") if settings.is_development else "Failed to send email"
+        raise HTTPException(status_code=500, detail=detail)
 
     return result

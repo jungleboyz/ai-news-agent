@@ -4,8 +4,9 @@ import os
 import sys
 from typing import Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
 from pydantic import BaseModel
+from slowapi import Limiter
 
 # Add parent directories to path for imports
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +17,15 @@ from services.vector_store import VectorStore
 from services.semantic_scorer import SemanticScorer
 
 router = APIRouter(prefix="/api", tags=["semantic-search"])
+
+
+def _get_real_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+limiter = Limiter(key_func=_get_real_ip)
 
 # Singleton instances
 _embedding_service: Optional[EmbeddingService] = None
@@ -68,7 +78,9 @@ class SearchResponse(BaseModel):
 
 
 @router.get("/semantic-search", response_model=SearchResponse)
+@limiter.limit("30/minute")
 async def semantic_search(
+    request: Request,
     q: str = Query(..., min_length=1, description="Search query"),
     limit: int = Query(10, ge=1, le=100, description="Maximum results to return"),
     item_type: Optional[str] = Query(None, description="Filter by type: news, podcast, video"),
@@ -120,11 +132,15 @@ async def semantic_search(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        from config import settings
+        detail = f"Search failed: {str(e)}" if settings.is_development else "Search failed"
+        raise HTTPException(status_code=500, detail=detail)
 
 
 @router.get("/semantic-search/similar/{item_id}")
+@limiter.limit("30/minute")
 async def find_similar(
+    request: Request,
     item_id: str,
     item_type: str = Query(..., description="Item type: news, podcast, video"),
     limit: int = Query(5, ge=1, le=50, description="Maximum results"),
@@ -188,7 +204,9 @@ async def find_similar(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        from config import settings
+        detail = f"Search failed: {str(e)}" if settings.is_development else "Search failed"
+        raise HTTPException(status_code=500, detail=detail)
 
 
 @router.get("/semantic-search/stats")
@@ -213,4 +231,6 @@ async def get_stats() -> dict:
         return stats
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+        from config import settings
+        detail = f"Failed to get stats: {str(e)}" if settings.is_development else "Failed to get stats"
+        raise HTTPException(status_code=500, detail=detail)
