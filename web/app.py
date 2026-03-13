@@ -472,10 +472,20 @@ async def logout():
     return response
 
 
-# Privacy policy (unlisted — direct access only, not linked from site)
+# Legal pages
 @app.api_route("/privacy", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
-async def privacy_health_intelligence(request: Request):
-    return templates.TemplateResponse("privacy_health.html", {"request": request})
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse("privacy.html", {"request": request})
+
+
+@app.api_route("/terms", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
+async def terms_of_service(request: Request):
+    return templates.TemplateResponse("terms.html", {"request": request})
+
+
+@app.api_route("/copyright", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
+async def copyright_policy(request: Request):
+    return templates.TemplateResponse("copyright.html", {"request": request})
 
 
 # Health check endpoint

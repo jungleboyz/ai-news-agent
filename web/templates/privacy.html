@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy — NEURAL_FEED{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <h1 class="font-cyber text-2xl md:text-3xl font-bold neon-text tracking-wider mb-2">Privacy Policy</h1>
+    <p class="text-sm text-gray-500 mb-10">Last updated: 1 March 2026</p>
+
+    <div class="space-y-8 text-gray-300 leading-relaxed">
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">1. Overview</h2>
+            <p>NEURAL_FEED (<a href="https://ripin.ai" class="text-neon-cyan hover:underline">ripin.ai</a>) is an AI-powered news aggregation platform that collects, clusters, and summarises content from public RSS feeds and APIs. No account creation or personally identifiable information (PII) is required to use the platform.</p>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">2. Data We Collect</h2>
+            <p class="mb-3">NEURAL_FEED collects minimal data to operate:</p>
+            <ul class="list-disc list-inside space-y-2 ml-4">
+                <li><strong class="text-gray-100">Session cookies</strong> — used to maintain authenticated admin sessions</li>
+                <li><strong class="text-gray-100">Preference cookies</strong> — used to remember digest filter and display preferences</li>
+                <li><strong class="text-gray-100">Interaction tracking</strong> — clicks, saves, and dismissals on digest items to improve personalisation; this data is stored locally and not linked to any personal identity</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">3. Data Sources</h2>
+            <p>All news content is sourced from publicly available RSS feeds and APIs. NEURAL_FEED does not scrape private or paywalled content. Sources include technology news sites, podcast directories, and research repositories.</p>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">4. No PII Required</h2>
+            <p>You do not need to create an account, provide an email address, or submit any personal information to use NEURAL_FEED. Admin access is protected by a simple password — no user registration exists.</p>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">5. Third-Party Services</h2>
+            <p>NEURAL_FEED does not use third-party tracking, analytics, or advertising services. No data is shared with or sold to third parties. AI processing for summarisation and clustering is performed using API calls that contain only public news content — never user data.</p>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">6. Data Storage</h2>
+            <p>All application data (news items, digests, interaction logs) is stored in a server-side database. Cookies are stored in your browser and can be cleared at any time through your browser settings.</p>
+        </section>
+
+        <section>
+            <h2 class="font-cyber text-lg text-neon-cyan mb-3">7. Contact</h2>
+            <p>For questions about this privacy policy, please contact us at <a href="mailto:privacy@ripin.ai" class="text-neon-cyan hover:underline">privacy@ripin.ai</a>.</p>
+        </section>
+    </div>
+</div>
+{% endblock %}
