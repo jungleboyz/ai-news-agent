@@ -60,7 +60,7 @@ def _run_digest_job():
 
 
 def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str | None):
-    """Send a status report email with daily brief after the digest pipeline finishes."""
+    """Send the daily brief email after the digest pipeline finishes."""
     import resend
 
     api_key = os.getenv("RESEND_API_KEY")
@@ -70,39 +70,30 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
         print("Scheduler: status email skipped (RESEND_API_KEY not configured)")
         return
 
-    # Gather digest stats from DB
-    status = "SUCCESS" if error is None else "FAILED"
-    stats_lines = []
+    recipients = [to_email]
+    extra = "robert.p.burden@nab.com.au"
+    if extra not in recipients:
+        recipients.append(extra)
+
     brief_text = ""
     brief_html = ""
-    digest_date = None
-    try:
-        from web.database import SessionLocal
-        from web.models import Digest, Item
+    digest_date = started_at.date()
 
-        today_utc = dt.now(timezone.utc).date()
-        with SessionLocal() as session:
-            digest = session.query(Digest).filter(
-                Digest.date == today_utc
-            ).first()
-            if digest:
-                digest_date = digest.date
-                items = session.query(Item).filter(Item.digest_id == digest.id).all()
-                by_type: dict[str, list] = {}
-                for item in items:
-                    by_type.setdefault(item.type, []).append(item)
+    if error:
+        brief_text = f"NEURAL_FEED digest pipeline failed.\n\nError:\n{error}"
+        subject = f"NEURAL_FEED Brief FAILED — {started_at.strftime('%b %d')}"
+    else:
+        try:
+            from web.database import SessionLocal
+            from web.models import Digest
 
-                stats_lines.append(f"Digest date: {digest.date}")
-                stats_lines.append(f"News sources: {digest.news_sources_count}")
-                stats_lines.append(f"Podcast sources: {digest.podcast_sources_count}")
-                stats_lines.append(f"Items considered: {digest.total_items_considered}")
-                stats_lines.append(f"Items in digest: {len(items)}")
-                stats_lines.append("")
-                for item_type, type_items in sorted(by_type.items()):
-                    stats_lines.append(f"  {item_type}: {len(type_items)} items")
-
-                # Generate daily brief summary
-                try:
+            today_utc = dt.now(timezone.utc).date()
+            with SessionLocal() as session:
+                digest = session.query(Digest).filter(
+                    Digest.date == today_utc
+                ).first()
+                if digest:
+                    digest_date = digest.date
                     from services.daily_brief import DailyBriefService
                     brief_service = DailyBriefService()
                     summary = brief_service.get_or_generate_summary(
@@ -115,67 +106,33 @@ def _send_digest_status_email(started_at: dt, elapsed_seconds: float, error: str
                         brief_html = brief_service.generate_brief_html(
                             summary, digest.date
                         )
-                        print("Scheduler: daily brief generated for status email")
+                        print("Scheduler: daily brief generated for email")
                     else:
-                        brief_text = f"\n(Brief generation failed: {summary['error']})\n"
-                except Exception as e:
-                    print(f"Scheduler: brief generation failed: {e}")
-                    brief_text = f"\n(Brief generation failed: {e})\n"
-            else:
-                stats_lines.append("No digest found in database for today.")
-    except Exception as e:
-        stats_lines.append(f"Could not query digest stats: {e}")
+                        brief_text = f"Brief generation failed: {summary['error']}"
+                else:
+                    brief_text = "No digest found in database for today."
+        except Exception as e:
+            print(f"Scheduler: brief generation failed: {e}")
+            brief_text = f"Brief generation failed: {e}"
 
-    minutes = int(elapsed_seconds // 60)
-    seconds = int(elapsed_seconds % 60)
-
-    status_block = f"""Neural Feed Digest — Status Report
-{'=' * 40}
-
-Status:   {status}
-Started:  {started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}
-Duration: {minutes}m {seconds}s
-"""
-    if error:
-        status_block += f"\nError:\n  {error}\n"
-
-    status_block += f"\n{chr(10).join(stats_lines)}\n"
-
-    # Plain text: status block + brief
-    plain_body = status_block
-    if brief_text:
-        plain_body += f"\n\n{brief_text}"
-
-    subject = f"Neural Feed {'OK' if error is None else 'FAILED'} — {started_at.strftime('%b %d')}"
+        subject = f"NEURAL_FEED Brief — {digest_date.strftime('%b %d')}"
 
     try:
         resend.api_key = api_key
 
-        # Build HTML body if we have the brief
-        html_body = None
-        if brief_html:
-            status_html = status_block.replace("\n", "<br>\n")
-            html_body = (
-                f'<div style="font-family:monospace;font-size:13px;'
-                f'background:#0f172a;color:#94a3b8;padding:20px;'
-                f'border-radius:8px;margin-bottom:24px;">'
-                f'{status_html}</div>\n'
-                f'{brief_html}'
-            )
-
         params = {
             "from": from_email,
-            "to": [to_email],
+            "to": recipients,
             "subject": subject,
-            "text": plain_body,
+            "text": brief_text,
         }
-        if html_body:
-            params["html"] = html_body
+        if brief_html:
+            params["html"] = brief_html
 
         resend.Emails.send(params)
-        print(f"Scheduler: status email sent to {to_email}")
+        print(f"Scheduler: brief email sent to {recipients}")
     except Exception as e:
-        print(f"Scheduler: failed to send status email: {e}")
+        print(f"Scheduler: failed to send brief email: {e}")
 
 
 def _scheduler_event_listener(event):

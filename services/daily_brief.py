@@ -186,13 +186,16 @@ Return ONLY valid JSON, no markdown formatting."""
 
     def generate_brief_html(self, summary: dict, digest_date: date) -> str:
         """Generate HTML version of the brief for email/web."""
+        from config import settings
+
         html = f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI News Brief - {digest_date}</title>
+    <title>NEURAL_FEED Brief - {digest_date}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -200,18 +203,28 @@ Return ONLY valid JSON, no markdown formatting."""
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
-            background: #0f172a;
+            background: #0a0a0f;
             color: #e2e8f0;
         }}
         h1 {{
-            color: #10b981;
+            font-family: 'Orbitron', sans-serif;
+            color: #00f5ff;
             font-size: 24px;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
+            letter-spacing: 2px;
         }}
         .date {{
-            color: #64748b;
-            font-size: 14px;
+            color: #ff00ff;
+            font-size: 13px;
             margin-bottom: 24px;
+            letter-spacing: 1px;
+        }}
+        .divider {{
+            height: 2px;
+            background: linear-gradient(90deg, #00f5ff, #ff00ff, #00f5ff);
+            border: none;
+            margin: 24px 0;
+            border-radius: 1px;
         }}
         .headline {{
             font-size: 20px;
@@ -219,15 +232,16 @@ Return ONLY valid JSON, no markdown formatting."""
             color: #f8fafc;
             margin-bottom: 24px;
             padding: 16px;
-            background: #1e293b;
-            border-left: 4px solid #10b981;
+            background: #0f0f18;
+            border-left: 4px solid #00f5ff;
             border-radius: 4px;
         }}
         h2 {{
-            color: #10b981;
-            font-size: 16px;
+            font-family: 'Orbitron', sans-serif;
+            color: #00f5ff;
+            font-size: 14px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
             margin-top: 32px;
             margin-bottom: 16px;
         }}
@@ -236,12 +250,15 @@ Return ONLY valid JSON, no markdown formatting."""
         }}
         li {{
             margin-bottom: 12px;
+            color: #cbd5e1;
         }}
         .story {{
-            background: #1e293b;
+            background: #0f0f18;
             padding: 16px;
             border-radius: 8px;
             margin-bottom: 16px;
+            border-top: 2px solid;
+            border-image: linear-gradient(90deg, #00f5ff, #ff00ff) 1;
         }}
         .story-title {{
             font-weight: 600;
@@ -256,10 +273,12 @@ Return ONLY valid JSON, no markdown formatting."""
             display: inline-block;
             font-size: 11px;
             text-transform: uppercase;
-            padding: 2px 8px;
-            background: #10b981;
-            color: #0f172a;
-            border-radius: 4px;
+            letter-spacing: 1px;
+            padding: 2px 10px;
+            background: rgba(0, 245, 255, 0.1);
+            color: #00f5ff;
+            border: 1px solid rgba(0, 245, 255, 0.3);
+            border-radius: 12px;
             margin-top: 8px;
         }}
         .full-summary {{
@@ -269,19 +288,31 @@ Return ONLY valid JSON, no markdown formatting."""
         .footer {{
             margin-top: 40px;
             padding-top: 20px;
-            border-top: 1px solid #334155;
+            border-top: 2px solid;
+            border-image: linear-gradient(90deg, #00f5ff, #ff00ff, #00f5ff) 1;
             color: #64748b;
             font-size: 12px;
             text-align: center;
         }}
+        .footer .brand {{
+            font-family: 'Orbitron', sans-serif;
+            color: #00f5ff;
+            font-size: 13px;
+            letter-spacing: 2px;
+        }}
         a {{
-            color: #10b981;
+            color: #00f5ff;
+        }}
+        a:hover {{
+            color: #ff00ff;
         }}
     </style>
 </head>
 <body>
-    <h1>AI News Brief</h1>
-    <div class="date">{digest_date.strftime('%B %d, %Y')}</div>
+    <h1>NEURAL_FEED</h1>
+    <div class="date">{digest_date.strftime('%B %d, %Y').upper()}</div>
+
+    <hr class="divider">
 
     <div class="headline">{summary.get('headline', 'Daily Summary')}</div>
 
@@ -292,6 +323,8 @@ Return ONLY valid JSON, no markdown formatting."""
             html += f"        <li>{insight}</li>\n"
 
         html += """    </ul>
+
+    <hr class="divider">
 
     <h2>Top Stories</h2>
 """
@@ -304,7 +337,9 @@ Return ONLY valid JSON, no markdown formatting."""
 """
 
         if summary.get('emerging_trends'):
-            html += """    <h2>Emerging Trends</h2>
+            html += """    <hr class="divider">
+
+    <h2>Emerging Trends</h2>
     <ul>
 """
             for trend in summary.get('emerging_trends', []):
@@ -312,12 +347,14 @@ Return ONLY valid JSON, no markdown formatting."""
             html += "    </ul>\n"
 
         html += f"""
+    <hr class="divider">
+
     <h2>Full Summary</h2>
     <div class="full-summary">{summary.get('full_summary', '')}</div>
 
     <div class="footer">
-        <p>Generated by AI News Agent</p>
-        <p><a href="http://localhost:8000">View Full Digest</a></p>
+        <p class="brand">NEURAL_FEED</p>
+        <p><a href="{settings.app_url}">View Full Digest</a></p>
     </div>
 </body>
 </html>
@@ -326,7 +363,9 @@ Return ONLY valid JSON, no markdown formatting."""
 
     def generate_brief_text(self, summary: dict, digest_date: date) -> str:
         """Generate plain text version of the brief."""
-        text = f"""AI NEWS BRIEF - {digest_date.strftime('%B %d, %Y')}
+        from config import settings
+
+        text = f"""NEURAL_FEED DAILY BRIEF - {digest_date.strftime('%B %d, %Y')}
 {'=' * 50}
 
 {summary.get('headline', 'Daily Summary')}
@@ -360,8 +399,8 @@ FULL SUMMARY
 {summary.get('full_summary', '')}
 
 ---
-Generated by AI News Agent
-View full digest: http://localhost:8000
+NEURAL_FEED
+View full digest: {settings.app_url}
 """
         return text
 
