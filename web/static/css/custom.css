@@ -442,7 +442,7 @@ body::before {
    =========================================== */
 
 .gear-dropdown {
-    background: #000000;
+    background: #000000 !important;
     border-color: var(--border-dark);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), 0 0 15px rgba(0, 245, 255, 0.1);
 }
