@@ -177,7 +177,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function toggleAudio() {
     const audio = document.getElementById('brief-audio');
     const iconPlay = document.getElementById('audio-icon-play');

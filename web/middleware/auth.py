@@ -32,14 +32,23 @@ def _sign(payload: str) -> str:
     ).hexdigest()
 
 
-def create_session_cookie() -> str:
-    """Create a signed session cookie value."""
-    data = json.dumps({"authenticated": True, "created": int(time.time())})
+def _ua_hash(user_agent: str) -> str:
+    """Hash user-agent for cookie binding (prevents replay from different device)."""
+    return hashlib.sha256(user_agent.encode()).hexdigest()[:16]
+
+
+def create_session_cookie(user_agent: str = "") -> str:
+    """Create a signed session cookie value bound to user-agent."""
+    data = json.dumps({
+        "authenticated": True,
+        "created": int(time.time()),
+        "ua": _ua_hash(user_agent),
+    })
     signature = _sign(data)
     return f"{data}|{signature}"
 
 
-def verify_session_cookie(cookie: str) -> bool:
+def verify_session_cookie(cookie: str, user_agent: str = "") -> bool:
     """Verify a signed session cookie."""
     try:
         parts = cookie.rsplit("|", 1)
@@ -55,6 +64,9 @@ def verify_session_cookie(cookie: str) -> bool:
         # Check expiry
         created = payload.get("created", 0)
         if time.time() - created > SESSION_MAX_AGE:
+            return False
+        # Verify user-agent binding (if present in cookie)
+        if "ua" in payload and payload["ua"] != _ua_hash(user_agent):
             return False
         return True
     except Exception:
@@ -100,7 +112,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Protected path — check session cookie
         session_cookie = request.cookies.get(SESSION_COOKIE)
-        if session_cookie and verify_session_cookie(session_cookie):
+        ua = request.headers.get("user-agent", "")
+        if session_cookie and verify_session_cookie(session_cookie, ua):
             return await call_next(request)
 
         # Not authenticated — return 401 for API, redirect for pages

@@ -227,7 +227,7 @@
     {% endif %}
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // Vertical filter keywords
 const FILTER_KEYWORDS = {
     marketing: ['marketing', 'brand', 'advertising', 'ad tech', 'seo', 'content strategy', 'social media', 'campaign', 'martech', 'personalization', 'customer engagement', 'copywriting', 'creative'],

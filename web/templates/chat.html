@@ -71,8 +71,8 @@
     </div>
 </div>
 
-<script src="https://unpkg.com/dompurify@3.0.6/dist/purify.min.js"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}" src="https://unpkg.com/dompurify@3.0.6/dist/purify.min.js"></script>
+<script nonce="{{ request.state.csp_nonce }}">
 let conversationId = null;
 let isStreaming = false;
 
