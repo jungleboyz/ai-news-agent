@@ -16,6 +16,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
+        # Remove Content-Length to avoid mismatch when BaseHTTPMiddleware
+        # re-wraps the response body (causes "Response content shorter than
+        # Content-Length" with GZipMiddleware). Uvicorn will recalculate it.
+        if "content-length" in response.headers:
+            del response.headers["content-length"]
+
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
