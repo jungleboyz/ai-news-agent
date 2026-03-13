@@ -102,7 +102,6 @@ async def homepage(
             "summary": summary,
             "digest_date": target_date,
             "available_dates": available_dates,
-            "has_elevenlabs": bool(settings.elevenlabs_api_key),
         },
     )
 

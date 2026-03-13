@@ -427,36 +427,6 @@ app.include_router(sources.router)
 app.include_router(chat.router)
 
 
-# --- Audio API ---
-
-@app.get("/api/audio/brief/{digest_date}")
-async def audio_brief(digest_date: str, db: Session = Depends(get_db)):
-    """Stream TTS audio for a daily brief, generating on first request."""
-    from services.daily_brief import DailyBriefService
-    from services.voice_service import VoiceService
-
-    try:
-        parsed_date = date.fromisoformat(digest_date)
-    except ValueError:
-        return JSONResponse(status_code=400, content={"detail": "Invalid date format"})
-
-    digest = db.query(Digest).filter(Digest.date == parsed_date).first()
-    if not digest:
-        return JSONResponse(status_code=404, content={"detail": "Digest not found"})
-
-    summary = DailyBriefService().get_or_generate_summary(db, parsed_date)
-
-    voice = VoiceService()
-    audio_bytes = voice.get_or_generate_audio_bytes(summary, parsed_date, db_session=db, digest=digest)
-    if not audio_bytes:
-        return JSONResponse(status_code=404, content={"detail": "Audio not available"})
-
-    return Response(
-        content=audio_bytes,
-        media_type="audio/mpeg",
-        headers={"Cache-Control": "public, max-age=86400"},
-    )
-
 
 # Login routes
 @app.get("/login", response_class=HTMLResponse)
