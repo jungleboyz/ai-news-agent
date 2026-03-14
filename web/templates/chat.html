@@ -160,6 +160,9 @@ async function sendMessage(message) {
 
         eventSource.onerror = () => {
             eventSource.close();
+            if (!fullResponse) {
+                updateAssistantMessage(assistantId, 'Connection error. Please try again.');
+            }
             isStreaming = false;
             sendButton.disabled = false;
         };
