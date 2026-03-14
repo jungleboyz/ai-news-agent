@@ -1,4 +1,5 @@
 """Chat and Daily Brief routes."""
+import asyncio
 import hashlib
 import hmac
 import json
@@ -21,6 +22,8 @@ from web.models import Digest, EmailSubscriber
 
 
 router = APIRouter(tags=["chat"])
+
+_SENTINEL = object()  # used to detect generator exhaustion in to_thread
 
 
 def _sign_unsubscribe_token(email: str) -> str:
@@ -240,16 +243,21 @@ async def chat_stream(
         sources = []
 
         try:
-            # Stream response
+            # Stream response — run sync generator in thread to avoid blocking event loop
             generator = service.chat_stream(message, history, db=db)
 
-            for chunk in generator:
-                if isinstance(chunk, dict):
-                    # Final metadata
-                    sources = chunk.get("sources", [])
-                else:
-                    full_response += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+            while True:
+                try:
+                    chunk = await asyncio.to_thread(next, generator, _SENTINEL)
+                    if chunk is _SENTINEL:
+                        break
+                    if isinstance(chunk, dict):
+                        sources = chunk.get("sources", [])
+                    else:
+                        full_response += chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                except StopIteration:
+                    break
 
             # Send sources at the end
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
