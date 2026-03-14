@@ -282,11 +282,12 @@ Please answer based on the retrieved context. If the context doesn't contain rel
         conversation_history: list[ChatMessage] = None,
         max_tokens: int = 1000,
         db=None,
-    ) -> Generator[str, None, dict]:
-        """Stream a chat response. Yields text chunks, then returns metadata."""
+    ) -> Generator[str | dict, None, None]:
+        """Stream a chat response. Yields text chunks, then yields a metadata dict."""
         if not self.client:
             yield "Chat is not available. Please configure ANTHROPIC_API_KEY."
-            return {"sources": []}
+            yield {"sources": []}
+            return
 
         # Retrieve relevant context
         context_items = self.retrieve_context(message, limit=8, db=db)
@@ -333,11 +334,11 @@ Please answer based on the retrieved context. If the context doesn't contain rel
                     "similarity": item.get("similarity", 0),
                 })
 
-            return {"sources": sources}
+            yield {"sources": sources}
 
         except Exception as e:
             yield f"\n\nError: {str(e)}"
-            return {"sources": [], "error": str(e)}
+            yield {"sources": [], "error": str(e)}
 
     def get_suggested_questions(self, db) -> list[str]:
         """Get suggested questions based on recent news."""
