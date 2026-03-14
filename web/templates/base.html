@@ -67,9 +67,12 @@
                 </a>
 
                 <!-- Mobile menu button -->
-                <button onclick="document.getElementById('nav-menu').classList.toggle('hidden')" class="md:hidden p-2 text-slate-400 hover:text-neon-cyan">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button id="nav-toggle" class="md:hidden p-2 text-slate-400 hover:text-neon-cyan" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-menu">
+                    <svg class="w-6 h-6" id="icon-hamburger" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                    <svg class="w-6 h-6 hidden" id="icon-close" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
 
@@ -172,9 +175,49 @@
     </footer>
 
     <!-- Toast notification container -->
-    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" style="bottom: max(1rem, env(safe-area-inset-bottom) + 1rem)"></div>
 
     <!-- Scripts -->
+    <script nonce="{{ request.state.csp_nonce }}">
+        // Mobile nav toggle
+        (function() {
+            const toggle = document.getElementById('nav-toggle');
+            const menu = document.getElementById('nav-menu');
+            const iconOpen = document.getElementById('icon-hamburger');
+            const iconClose = document.getElementById('icon-close');
+            if (!toggle || !menu) return;
+
+            function closeMenu() {
+                menu.classList.add('hidden');
+                iconOpen.classList.remove('hidden');
+                iconClose.classList.add('hidden');
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+
+            toggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const isOpen = !menu.classList.contains('hidden');
+                if (isOpen) {
+                    closeMenu();
+                } else {
+                    menu.classList.remove('hidden');
+                    iconOpen.classList.add('hidden');
+                    iconClose.classList.remove('hidden');
+                    toggle.setAttribute('aria-expanded', 'true');
+                }
+            });
+
+            document.addEventListener('click', function(e) {
+                if (!menu.contains(e.target) && e.target !== toggle) {
+                    closeMenu();
+                }
+            });
+
+            menu.querySelectorAll('a').forEach(function(link) {
+                link.addEventListener('click', closeMenu);
+            });
+        })();
+    </script>
     <script nonce="{{ request.state.csp_nonce }}">
         // Gear dropdown toggle
         (function() {

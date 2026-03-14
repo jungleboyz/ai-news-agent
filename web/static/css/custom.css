@@ -551,4 +551,18 @@ a:focus, button:focus, input:focus, select:focus, textarea:focus {
     body::before {
         opacity: 0.15;
     }
+
+    .cyber-nav-link {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+    }
+
+    h1 {
+        font-size: 1.5rem;
+    }
+
+    main, .max-w-6xl, .max-w-4xl {
+        overflow-x: hidden;
+    }
 }
