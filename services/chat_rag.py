@@ -1,6 +1,8 @@
 """RAG (Retrieval Augmented Generation) and Chat service."""
 import os
 import re
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Generator, Optional
@@ -58,7 +60,9 @@ def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
         # Build ILIKE conditions for each keyword against title and summary
         conditions = []
         for kw in keywords:
-            pattern = f"%{kw}%"
+            # Escape SQL LIKE wildcards so user input is matched literally
+            escaped = kw.replace("%", r"\%").replace("_", r"\_")
+            pattern = f"%{escaped}%"
             conditions.append(Item.title.ilike(pattern))
             conditions.append(Item.summary.ilike(pattern))
 
@@ -367,33 +371,47 @@ Please answer based on the retrieved context. If the context doesn't contain rel
 
 
 class ConversationManager:
-    """Manages chat conversations with history."""
+    """Manages chat conversations with history (thread-safe, memory-bounded)."""
+
+    MAX_CONVERSATIONS = 200
+    MAX_MESSAGES_PER_CONVERSATION = 50
 
     def __init__(self):
-        self.conversations: dict[str, list[ChatMessage]] = {}
+        self._conversations: OrderedDict[str, list[ChatMessage]] = OrderedDict()
+        self._lock = threading.Lock()
 
     def get_conversation(self, conversation_id: str) -> list[ChatMessage]:
         """Get conversation history."""
-        return self.conversations.get(conversation_id, [])
+        with self._lock:
+            return list(self._conversations.get(conversation_id, []))
 
     def add_message(self, conversation_id: str, message: ChatMessage):
         """Add a message to conversation history."""
-        if conversation_id not in self.conversations:
-            self.conversations[conversation_id] = []
-        self.conversations[conversation_id].append(message)
+        with self._lock:
+            if conversation_id not in self._conversations:
+                self._conversations[conversation_id] = []
+            self._conversations[conversation_id].append(message)
 
-        # Keep only last 50 messages
-        if len(self.conversations[conversation_id]) > 50:
-            self.conversations[conversation_id] = self.conversations[conversation_id][-50:]
+            # Keep only last N messages per conversation
+            if len(self._conversations[conversation_id]) > self.MAX_MESSAGES_PER_CONVERSATION:
+                self._conversations[conversation_id] = self._conversations[conversation_id][-self.MAX_MESSAGES_PER_CONVERSATION:]
+
+            # Move to end (most recently used)
+            self._conversations.move_to_end(conversation_id)
+
+            # Evict oldest conversations if over limit
+            while len(self._conversations) > self.MAX_CONVERSATIONS:
+                self._conversations.popitem(last=False)
 
     def clear_conversation(self, conversation_id: str):
         """Clear conversation history."""
-        if conversation_id in self.conversations:
-            del self.conversations[conversation_id]
+        with self._lock:
+            self._conversations.pop(conversation_id, None)
 
     def get_all_conversation_ids(self) -> list[str]:
         """Get all conversation IDs."""
-        return list(self.conversations.keys())
+        with self._lock:
+            return list(self._conversations.keys())
 
 
 # Global conversation manager

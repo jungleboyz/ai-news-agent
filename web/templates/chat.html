@@ -135,8 +135,11 @@ async function sendMessage(message) {
         const eventSource = new EventSource(url);
         let fullResponse = '';
         let sources = [];
+        let errorRetries = 0;
+        const MAX_RETRIES = 2;
 
         eventSource.onmessage = (event) => {
+            errorRetries = 0; // reset on successful message
             const data = JSON.parse(event.data);
 
             if (data.type === 'chunk') {
@@ -159,12 +162,15 @@ async function sendMessage(message) {
         };
 
         eventSource.onerror = () => {
-            eventSource.close();
-            if (!fullResponse) {
-                updateAssistantMessage(assistantId, 'Connection error. Please try again.');
+            errorRetries++;
+            if (errorRetries > MAX_RETRIES) {
+                eventSource.close();
+                if (!fullResponse) {
+                    updateAssistantMessage(assistantId, 'Connection error. Please try again.');
+                }
+                isStreaming = false;
+                sendButton.disabled = false;
             }
-            isStreaming = false;
-            sendButton.disabled = false;
         };
 
     } catch (error) {

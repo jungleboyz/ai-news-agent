@@ -200,8 +200,8 @@ async def chat(
     user_message = ChatMessage(role="user", content=chat_request.message)
     conversation_manager.add_message(conversation_id, user_message)
 
-    # Get response
-    response = service.chat(chat_request.message, history, db=db)
+    # Get response — run sync Anthropic call in thread to avoid blocking event loop
+    response = await asyncio.to_thread(service.chat, chat_request.message, history, db=db)
 
     # Add assistant response to history
     conversation_manager.add_message(conversation_id, response)
