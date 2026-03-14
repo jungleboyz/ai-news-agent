@@ -23,6 +23,9 @@ from web.models import Digest, EmailSubscriber
 
 router = APIRouter(tags=["chat"])
 
+# Shared service instance — avoids re-creating Anthropic client and VectorStore per request
+_chat_service = ChatRAGService()
+
 _SENTINEL = object()  # used to detect generator exhaustion in to_thread
 
 
@@ -167,8 +170,7 @@ async def chat_page(
     db: Session = Depends(get_db),
 ):
     """Render the chat interface."""
-    chat_service = ChatRAGService()
-    suggestions = chat_service.get_suggested_questions(db)
+    suggestions = _chat_service.get_suggested_questions(db)
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -188,7 +190,7 @@ async def chat(
     db: Session = Depends(get_db),
 ):
     """Process a chat message."""
-    service = ChatRAGService()
+    service = _chat_service
 
     # Get or create conversation ID
     conversation_id = chat_request.conversation_id or str(uuid.uuid4())
@@ -226,7 +228,7 @@ async def chat_stream(
     if len(message) > 2000:
         raise HTTPException(status_code=400, detail="Message too long (max 2000 characters)")
 
-    service = ChatRAGService()
+    service = _chat_service
 
     # Get or create conversation ID
     conv_id = conversation_id or str(uuid.uuid4())
@@ -316,8 +318,7 @@ async def clear_chat_history(conversation_id: str):
 @router.get("/api/chat/suggestions")
 async def get_suggestions(db: Session = Depends(get_db)):
     """Get suggested questions."""
-    service = ChatRAGService()
-    return {"suggestions": service.get_suggested_questions(db)}
+    return {"suggestions": _chat_service.get_suggested_questions(db)}
 
 
 # Email Subscription Routes
