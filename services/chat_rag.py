@@ -49,12 +49,14 @@ def _extract_keywords(query: str) -> list[str]:
     return keywords
 
 
-def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
+def _search_items_in_db(db, query: str, limit: int = 20) -> list[dict]:
     """Search for items in PostgreSQL using keyword matching.
 
+    Searches across ALL historical items, ranking by relevance (keyword
+    match count) rather than recency so older content is still discoverable.
     Falls back to recent items if no keyword matches found.
     """
-    from sqlalchemy import desc, or_, func
+    from sqlalchemy import desc, or_
     from web.models import Item, Digest
 
     keywords = _extract_keywords(query)
@@ -69,13 +71,14 @@ def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
             conditions.append(Item.title.ilike(pattern))
             conditions.append(Item.summary.ilike(pattern))
 
-        # Query items matching any keyword, ordered by recency and score
+        # Fetch a broad set of matches (up to 200) so we can rank by
+        # relevance across the full history, not just recent items.
         items = (
             db.query(Item)
             .join(Digest)
             .filter(or_(*conditions))
-            .order_by(desc(Digest.date), desc(Item.score))
-            .limit(limit)
+            .order_by(desc(Item.score))
+            .limit(200)
             .all()
         )
     else:
@@ -91,10 +94,9 @@ def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
             .all()
         )
 
-    # Convert to the same format as vector store results
+    # Score each item by keyword relevance, then sort by relevance
     results = []
     for item in items:
-        # Calculate a simple relevance score based on keyword matches
         text = f"{item.title} {item.summary or ''}".lower()
         match_count = sum(1 for kw in keywords if kw in text) if keywords else 0
 
@@ -111,7 +113,9 @@ def _search_items_in_db(db, query: str, limit: int = 15) -> list[dict]:
             "similarity": min(match_count / max(len(keywords), 1), 1.0) if keywords else 0.5,
         })
 
-    return results
+    # Sort by relevance (keyword matches) first, then by item score
+    results.sort(key=lambda r: (r["similarity"], r["metadata"]["score"]), reverse=True)
+    return results[:limit]
 
 
 class ChatRAGService:
@@ -235,7 +239,7 @@ You have access to retrieved news items that are relevant to the user's question
             )
 
         # Retrieve relevant context
-        context_items = self.retrieve_context(message, limit=8, db=db)
+        context_items = self.retrieve_context(message, limit=20, db=db)
         context_text = self._format_context(context_items)
 
         # Build messages
@@ -269,7 +273,7 @@ Please answer based on the retrieved context. If the context doesn't contain rel
 
             # Extract sources from context
             sources = []
-            for item in context_items[:5]:  # Top 5 sources
+            for item in context_items[:10]:  # Top 5 sources
                 metadata = item.get("metadata", {})
                 sources.append({
                     "title": metadata.get("title", "Untitled"),
@@ -306,7 +310,7 @@ Please answer based on the retrieved context. If the context doesn't contain rel
             return
 
         # Retrieve relevant context
-        context_items = self.retrieve_context(message, limit=8, db=db)
+        context_items = self.retrieve_context(message, limit=20, db=db)
         context_text = self._format_context(context_items)
 
         # Build messages
@@ -340,7 +344,7 @@ Please answer based on the retrieved context. If the context doesn't contain rel
 
             # Return sources after streaming
             sources = []
-            for item in context_items[:5]:
+            for item in context_items[:10]:
                 metadata = item.get("metadata", {})
                 sources.append({
                     "title": metadata.get("title", "Untitled"),
