@@ -6,7 +6,7 @@
 <div class="max-w-4xl mx-auto">
     <div class="flex items-center justify-between mb-6">
         <h1 class="text-3xl font-bold text-white">AI News Chat</h1>
-        <button onclick="clearChat()" class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm">
+        <button id="clearChatBtn" class="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm">
             Clear Chat
         </button>
     </div>
@@ -39,9 +39,8 @@
         <div id="suggestionsContainer" class="px-4 pb-2">
             <div class="flex flex-wrap gap-2">
                 {% for suggestion in suggestions %}
-                <button onclick="sendMessage(this.dataset.msg)"
-                    data-msg="{{ suggestion|e }}"
-                    class="px-4 py-2.5 md:px-3 md:py-1.5 bg-slate-700 text-slate-300 rounded-full text-sm hover:bg-slate-600 hover:text-white transition-colors">
+                <button data-msg="{{ suggestion|e }}"
+                    class="suggestion-btn px-4 py-2.5 md:px-3 md:py-1.5 bg-slate-700 text-slate-300 rounded-full text-sm hover:bg-slate-600 hover:text-white transition-colors">
                     {{ suggestion|e }}
                 </button>
                 {% endfor %}
@@ -50,7 +49,7 @@
 
         <!-- Input area -->
         <div class="p-4 border-t border-slate-700">
-            <form onsubmit="handleSubmit(event)" class="flex gap-3">
+            <form id="chatForm" class="flex gap-3">
                 <input type="text" id="messageInput"
                     placeholder="Ask about AI news..."
                     class="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg border border-slate-600 focus:border-emerald-500 focus:outline-none"
@@ -135,11 +134,9 @@ async function sendMessage(message) {
         const eventSource = new EventSource(url);
         let fullResponse = '';
         let sources = [];
-        let errorRetries = 0;
-        const MAX_RETRIES = 2;
+        let streamDone = false;
 
         eventSource.onmessage = (event) => {
-            errorRetries = 0; // reset on successful message
             const data = JSON.parse(event.data);
 
             if (data.type === 'chunk') {
@@ -149,11 +146,13 @@ async function sendMessage(message) {
                 sources = data.sources;
                 showSources(sources);
             } else if (data.type === 'done') {
+                streamDone = true;
                 conversationId = data.conversation_id;
                 eventSource.close();
                 isStreaming = false;
                 sendButton.disabled = false;
             } else if (data.type === 'error') {
+                streamDone = true;
                 updateAssistantMessage(assistantId, `Error: ${data.message}`);
                 eventSource.close();
                 isStreaming = false;
@@ -162,15 +161,13 @@ async function sendMessage(message) {
         };
 
         eventSource.onerror = () => {
-            errorRetries++;
-            if (errorRetries > MAX_RETRIES) {
-                eventSource.close();
-                if (!fullResponse) {
-                    updateAssistantMessage(assistantId, 'Connection error. Please try again.');
-                }
-                isStreaming = false;
-                sendButton.disabled = false;
+            // Always close on error to prevent auto-reconnect duplicating messages
+            eventSource.close();
+            if (!streamDone && !fullResponse) {
+                updateAssistantMessage(assistantId, 'Connection error. Please try again.');
             }
+            isStreaming = false;
+            sendButton.disabled = false;
         };
 
     } catch (error) {
@@ -282,6 +279,25 @@ function formatInline(text) {
         .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-emerald-400 underline">$1</a>')
         .replace(/\n/g, '<br>');
 }
+
+// Wire up event listeners (CSP blocks inline onclick/onsubmit)
+document.getElementById('chatForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const input = document.getElementById('messageInput');
+    const message = input.value.trim();
+    if (message && !isStreaming) {
+        sendMessage(message);
+        input.value = '';
+    }
+});
+
+document.getElementById('clearChatBtn').addEventListener('click', clearChat);
+
+document.querySelectorAll('.suggestion-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        sendMessage(this.dataset.msg);
+    });
+});
 
 // Focus input on load (skip on mobile to prevent keyboard popup)
 if (window.innerWidth >= 768) {

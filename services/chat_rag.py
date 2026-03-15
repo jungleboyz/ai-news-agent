@@ -1,4 +1,5 @@
 """RAG (Retrieval Augmented Generation) and Chat service."""
+import logging
 import os
 import re
 import threading
@@ -6,6 +7,8 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Generator, Optional
+
+logger = logging.getLogger(__name__)
 
 from anthropic import Anthropic
 
@@ -134,13 +137,21 @@ You have access to retrieved news items that are relevant to the user's question
         api_key: Optional[str] = None,
         vector_store: Optional[VectorStore] = None,
     ):
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        self.client = None
-        if self.api_key:
-            self.client = Anthropic(api_key=self.api_key)
+        self._api_key = api_key
+        self._client = None
+        self._client_initialized = False
 
         self._vector_store = vector_store
         self._vector_store_initialized = False
+
+    @property
+    def client(self) -> Optional[Anthropic]:
+        if not self._client_initialized:
+            api_key = self._api_key or os.getenv("ANTHROPIC_API_KEY")
+            if api_key:
+                self._client = Anthropic(api_key=api_key)
+            self._client_initialized = True
+        return self._client
 
     @property
     def vector_store(self) -> Optional[VectorStore]:
@@ -148,8 +159,8 @@ You have access to retrieved news items that are relevant to the user's question
             try:
                 if self._vector_store is None:
                     self._vector_store = VectorStore()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to initialize VectorStore: %s", e)
             self._vector_store_initialized = True
         return self._vector_store
 
@@ -171,15 +182,16 @@ You have access to retrieved news items that are relevant to the user's question
                 )
                 if results:
                     return results
-            except Exception:
-                pass
+                logger.debug("Vector store returned no results for: %s", query[:80])
+            except Exception as e:
+                logger.warning("Vector store search failed: %s", e)
 
-        # Fall back to PostgreSQL keyword search
+        # Fall back to DB keyword search
         if db is not None:
             try:
                 return _search_items_in_db(db, query, limit=limit)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("DB keyword search failed: %s", e)
 
         return []
 

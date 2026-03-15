@@ -40,10 +40,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         else:
             response.headers["Cache-Control"] = "private, no-cache"
 
+        # Note: 'unsafe-inline' is required because many templates use inline
+        # event handlers (onclick, onsubmit, onchange).  Per the CSP spec,
+        # 'unsafe-inline' is ignored when a nonce is present, so we cannot
+        # use nonces and inline handlers at the same time.  The nonce is
+        # still generated and available in templates for future migration
+        # to addEventListener-only (chat.html already uses this pattern).
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            f"script-src 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com https://unpkg.com; "
-            f"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src https://fonts.gstatic.com; "
             "img-src 'self' data:; "
             "connect-src 'self'; "

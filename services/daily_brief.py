@@ -31,7 +31,7 @@ class DailyBriefService:
             # Get latest digest
             latest_digest = db.query(Digest).order_by(Digest.date.desc()).first()
             if latest_digest:
-                query = query.filter(Digest.digest_id == latest_digest.id)
+                query = query.filter(Item.digest_id == latest_digest.id)
 
         return query.filter(Item.score > 0).order_by(Item.score.desc()).limit(50).all()
 
